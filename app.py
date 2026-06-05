@@ -37,7 +37,6 @@ def create_app() -> gr.TabbedInterface:
             [config_ui, chat_ui],
             ["⚙️ Configuration", "💬 Chat"],
             title="GCM Agent - IBM Guardium Cryptography Manager Assistant",
-            theme=gr.themes.Soft(),
         )
         
         logger.info("GCM Agent application created successfully")
@@ -67,6 +66,7 @@ def main():
             show_error=True,         # Show detailed errors in UI
             favicon_path=None,       # Use default favicon
             show_api=False,          # Don't show API docs
+            theme=gr.themes.Soft(),  # Apply theme at launch
         )
         
     except Exception as e:

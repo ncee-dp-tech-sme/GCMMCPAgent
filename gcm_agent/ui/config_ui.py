@@ -242,7 +242,7 @@ def create_config_ui() -> gr.Blocks:
     """
     logger.info("Creating configuration UI")
     
-    with gr.Blocks(title="GCM Agent Configuration", theme=gr.themes.Soft()) as config_ui:
+    with gr.Blocks(title="GCM Agent Configuration") as config_ui:
         gr.Markdown("# 🔧 GCM Agent Configuration")
         gr.Markdown("Configure your GCM Agent connection, authentication, and settings.")
         

@@ -285,7 +285,7 @@ def create_chat_ui() -> gr.Blocks:
     """
     logger.info("Creating chat UI")
     
-    with gr.Blocks(title="GCM Agent Chat", theme=gr.themes.Soft()) as chat_ui:
+    with gr.Blocks(title="GCM Agent Chat") as chat_ui:
         gr.Markdown("# 💬 GCM Agent Chat Interface")
         gr.Markdown("Interact with IBM Guardium Cryptography Manager using natural language.")
         
@@ -304,7 +304,6 @@ def create_chat_ui() -> gr.Blocks:
             label="Conversation",
             height=500,
             show_label=True,
-            bubble_full_width=False,
             avatar_images=(None, "🤖"),
         )
         
