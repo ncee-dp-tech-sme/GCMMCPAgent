@@ -3,6 +3,7 @@
 # Made with Bob
 # 2026-06-05 21:58 UTC - Initial implementation of GCMAuthenticator with user management authorization
 # 2026-06-05 21:44 UTC - Fixed authorization endpoint to use /ibm/usermanagement/api/v2/authorization with tenantId payload
+# 2026-06-05 22:00 UTC - Fixed client_factory to merge headers instead of overwriting
 
 from typing import Callable, Optional, Dict, Any
 
@@ -165,18 +166,23 @@ class GCMAuthenticator:
         def factory(**kwargs) -> httpx.AsyncClient:
             """
             Factory function to create authenticated AsyncClient.
-            Pops 'verify' from kwargs to avoid conflicts, then uses our verify_ssl setting.
+            Merges authentication headers with any headers passed by MCP client.
             """
             # Remove 'verify' from kwargs if present to avoid conflicts
             kwargs.pop("verify", None)
-
-            headers = {
+            
+            # Get existing headers from kwargs if any
+            existing_headers = kwargs.pop("headers", {})
+            
+            # Merge with authentication headers (our auth headers take precedence)
+            merged_headers = {
+                **existing_headers,
                 "Authorization": f"Bearer {access_token}",
                 "Content-Type": "application/json",
             }
 
             return httpx.AsyncClient(
-                headers=headers,
+                headers=merged_headers,
                 verify=verify_ssl,
                 timeout=timeout,
                 **kwargs,
