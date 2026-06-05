@@ -3,14 +3,15 @@
 # Made with Bob
 # 2026-06-05 22:11 UTC - Initial implementation of LangGraph agent following AGENTS.md patterns
 # 2026-06-05 21:51 UTC - Added WatsonX URL parameter to LLM initialization
+# 2026-06-05 22:05 UTC - Fixed to use ChatWatsonx instead of WatsonxLLM for tool binding support
 
 from typing import List, Optional, AsyncGenerator
 from datetime import datetime
 
-from langchain_ibm import WatsonxLLM
+from langchain_ibm import ChatWatsonx
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, MessagesState, START, END
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_core.tools import Tool
 
 from gcm_agent.mcp.client import GCMMCPClient
@@ -76,23 +77,23 @@ class GCMAgent:
         self.logger = get_agent_logger()
         
         # Initialize components
-        self.llm: Optional[WatsonxLLM] = None
+        self.llm: Optional[ChatWatsonx] = None
         self.tools: List[Tool] = []
         self.graph: Optional[StateGraph] = None
         self.history: List[BaseMessage] = []
         
         self.logger.info("GCM Agent instance created")
 
-    def _initialize_llm(self) -> WatsonxLLM:
+    def _initialize_llm(self) -> ChatWatsonx:
         """
-        Initialize WatsonX LLM with configuration.
+        Initialize WatsonX Chat LLM with configuration.
         
         Returns:
-            Configured WatsonX LLM instance
+            Configured ChatWatsonx instance (supports tool calling)
         """
-        self.logger.debug(f"Initializing WatsonX LLM with model: {self.watsonx_config.model} at {self.watsonx_config.url}")
+        self.logger.debug(f"Initializing ChatWatsonx with model: {self.watsonx_config.model} at {self.watsonx_config.url}")
         
-        return WatsonxLLM(
+        return ChatWatsonx(
             model_id=self.watsonx_config.model,
             url=self.watsonx_config.url,
             project_id=self.watsonx_config.project_id,
@@ -139,19 +140,22 @@ class GCMAgent:
         # Get system prompt based on discovery mode
         system_prompt = get_system_prompt(self.agent_config.discovery_mode)
         
-        # Bind system prompt to LLM (correct approach for LangGraph)
-        llm_with_prompt = self.llm.bind(system=system_prompt)
-        
         # Create agent using create_react_agent() wrapper (CRITICAL per AGENTS.md)
+        # System prompt will be injected via messages in the agent node
         agent = create_react_agent(
-            llm_with_prompt,
+            self.llm,
             self.tools,
         )
         
-        # Define async agent node
+        # Define async agent node with system prompt injection
         async def agent_node(state: MessagesState) -> MessagesState:
-            """Agent node that processes messages."""
-            result = await agent.ainvoke(state)
+            """Agent node that processes messages with system prompt."""
+            # Inject system prompt as first message if not present
+            messages = state["messages"]
+            if not messages or not isinstance(messages[0], SystemMessage):
+                messages = [SystemMessage(content=system_prompt)] + messages
+            
+            result = await agent.ainvoke({"messages": messages})
             return {"messages": result["messages"]}
         
         # Build graph: START → agent → END
