@@ -1,0 +1,27 @@
+# Core LangChain dependencies
+langchain>=0.1.0
+langchain-core
+langgraph>=0.0.40
+langchain-ibm>=0.1.0
+langchain-mcp-adapters>=0.1.0
+
+# HTTP and networking
+httpx>=0.25.0
+
+# Configuration and settings
+pydantic>=2.0.0
+pydantic-settings
+python-dotenv>=1.0.0
+
+# Monitoring and tracing
+langsmith==0.7.10
+
+# Security and credentials
+keyring>=24.0.0
+
+# UI
+gradio>=4.0.0
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0

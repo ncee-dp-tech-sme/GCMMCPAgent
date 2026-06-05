@@ -1,0 +1,210 @@
+"""Tests for LangGraph agent initialization, prompt wiring, and tool orchestration."""
+
+import pytest
+from unittest.mock import Mock, patch, AsyncMock, MagicMock
+from gcm_agent.agent.gcm_agent import GCMAgent
+from gcm_agent.agent.prompts import get_system_prompt
+
+
+class TestGCMAgent:
+    """Test GCM agent functionality."""
+    
+    @pytest.mark.asyncio
+    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
+    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
+    async def test_initialize_agent(self, mock_create_react_agent, mock_llm_class):
+        """Test agent initialization with LLM and tools."""
+        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
+        
+        mock_llm = Mock()
+        mock_llm_class.return_value = mock_llm
+        
+        mock_graph = Mock()
+        mock_create_react_agent.return_value = mock_graph
+        
+        mock_mcp_client = AsyncMock()
+        mock_tool_loader = AsyncMock()
+        mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
+        
+        watsonx_config = WatsonXConfig(
+            api_key='test_api_key',
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2'
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        
+        agent = GCMAgent(
+            mcp_client=mock_mcp_client,
+            tool_loader=mock_tool_loader,
+            watsonx_config=watsonx_config,
+            api_key='test_api_key',
+            agent_config=agent_config
+        )
+        
+        await agent.initialize()
+        
+        assert mock_llm_class.called
+        assert mock_create_react_agent.called
+    
+    @pytest.mark.asyncio
+    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
+    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
+    async def test_chat(self, mock_create_react_agent, mock_llm_class):
+        """Test processing a user message through the agent."""
+        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
+        from langchain_core.messages import AIMessage
+        
+        mock_llm = Mock()
+        mock_llm_class.return_value = mock_llm
+        
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = {
+            'messages': [
+                AIMessage(content='Test response')
+            ]
+        }
+        mock_create_react_agent.return_value = mock_graph
+        
+        mock_mcp_client = AsyncMock()
+        mock_tool_loader = AsyncMock()
+        mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
+        
+        watsonx_config = WatsonXConfig(
+            api_key='test_api_key',
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2'
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        
+        agent = GCMAgent(
+            mcp_client=mock_mcp_client,
+            tool_loader=mock_tool_loader,
+            watsonx_config=watsonx_config,
+            api_key='test_api_key',
+            agent_config=agent_config
+        )
+        
+        await agent.initialize()
+        response = await agent.chat('Test query')
+        
+        assert response == 'Test response'
+        assert mock_graph.ainvoke.called
+    
+    @pytest.mark.asyncio
+    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
+    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
+    async def test_agent_with_tools(self, mock_create_react_agent, mock_llm_class):
+        """Test agent initialization with multiple tools."""
+        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
+        
+        mock_llm = Mock()
+        mock_llm_class.return_value = mock_llm
+        
+        mock_graph = Mock()
+        mock_create_react_agent.return_value = mock_graph
+        
+        mock_mcp_client = AsyncMock()
+        mock_tool_loader = AsyncMock()
+        mock_tool_loader.load_tools.return_value = [
+            Mock(name='list_keys'),
+            Mock(name='create_key'),
+            Mock(name='delete_key')
+        ]
+        
+        watsonx_config = WatsonXConfig(
+            api_key='test_api_key',
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2'
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        
+        agent = GCMAgent(
+            mcp_client=mock_mcp_client,
+            tool_loader=mock_tool_loader,
+            watsonx_config=watsonx_config,
+            api_key='test_api_key',
+            agent_config=agent_config
+        )
+        
+        await agent.initialize()
+        
+        # Verify tools were passed to agent creation
+        call_args = mock_create_react_agent.call_args
+        assert call_args is not None
+    
+    @pytest.mark.asyncio
+    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
+    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
+    async def test_agent_history(self, mock_create_react_agent, mock_llm_class):
+        """Test agent maintains conversation history."""
+        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
+        from langchain_core.messages import AIMessage
+        
+        mock_llm = Mock()
+        mock_llm_class.return_value = mock_llm
+        
+        mock_graph = AsyncMock()
+        mock_graph.ainvoke.return_value = {
+            'messages': [
+                AIMessage(content='Response 1')
+            ]
+        }
+        mock_create_react_agent.return_value = mock_graph
+        
+        mock_mcp_client = AsyncMock()
+        mock_tool_loader = AsyncMock()
+        mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
+        
+        watsonx_config = WatsonXConfig(
+            api_key='test_api_key',
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2'
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        
+        agent = GCMAgent(
+            mcp_client=mock_mcp_client,
+            tool_loader=mock_tool_loader,
+            watsonx_config=watsonx_config,
+            api_key='test_api_key',
+            agent_config=agent_config
+        )
+        
+        await agent.initialize()
+        
+        # Process multiple messages
+        await agent.chat('Query 1')
+        await agent.chat('Query 2')
+        
+        # Verify history is maintained
+        assert len(agent.history) > 0
+
+
+class TestSystemPrompt:
+    """Test system prompt configuration."""
+    
+    def test_system_prompt_exists(self):
+        """Test that system prompt is defined."""
+        prompt = get_system_prompt(discovery_mode=False)
+        assert prompt is not None
+        assert len(prompt) > 0
+    
+    def test_system_prompt_content(self):
+        """Test system prompt contains key instructions."""
+        prompt = get_system_prompt(discovery_mode=False)
+        assert 'GCM' in prompt or 'Guardium' in prompt or 'cryptography' in prompt.lower()
+
+
+# Made with Bob
