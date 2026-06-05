@@ -355,7 +355,27 @@ class GCMMCPClient:
             except Exception as e:
                 self.logger.warning(f"Could not monkey-patch httpx.AsyncClient: {e}")
             
-            # Method 4: Suppress SSL warnings
+            # Method 4: Monkey-patch MCP's create_mcp_http_client function
+            try:
+                from mcp.shared._httpx_utils import create_mcp_http_client
+                import httpx
+                
+                original_create = create_mcp_http_client
+                
+                def patched_create(**kwargs):
+                    # Force verify=False in the factory
+                    kwargs['verify'] = False
+                    self.logger.debug(f"MCP factory called with patched verify=False, kwargs={list(kwargs.keys())}")
+                    return original_create(**kwargs)
+                
+                # Replace the function in the module
+                import mcp.shared._httpx_utils
+                mcp.shared._httpx_utils.create_mcp_http_client = patched_create
+                self.logger.debug("Monkey-patched mcp.shared._httpx_utils.create_mcp_http_client")
+            except Exception as e:
+                self.logger.warning(f"Could not monkey-patch create_mcp_http_client: {e}")
+            
+            # Method 5: Suppress SSL warnings
             warnings.filterwarnings('ignore', message='Unverified HTTPS request')
             warnings.filterwarnings('ignore', message='InsecureRequestWarning')
             
@@ -368,7 +388,7 @@ class GCMMCPClient:
                 pass
             
             self._ssl_context_applied = True
-            self.logger.info("SSL verification workaround applied successfully (all methods including httpx monkey-patch)")
+            self.logger.info("SSL verification workaround applied successfully (all methods including MCP factory monkey-patch)")
             
         except Exception as e:
             self.logger.error(f"Failed to apply SSL workaround: {e}")
