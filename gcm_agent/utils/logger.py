@@ -2,9 +2,11 @@
 
 # Made with Bob
 # 2026-06-05 19:52 UTC - Initial implementation of structured logging utility
+# 2026-06-05 21:31 UTC - Added environment variable support for log level and file logging configuration
 
 import logging
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 from datetime import datetime
@@ -195,27 +197,80 @@ def sanitize_sensitive_data(message: str) -> str:
     return sanitized
 
 
+def _get_log_level_from_env() -> int:
+    """
+    Get log level from environment variable.
+    
+    Returns:
+        Logging level (default: INFO)
+    """
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level_map = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    return level_map.get(level_name, logging.INFO)
+
+
+def _get_log_file_path(module_name: str) -> Optional[str]:
+    """
+    Get log file path from environment configuration.
+    
+    Args:
+        module_name: Name of the module (e.g., 'gcm_agent.auth')
+    
+    Returns:
+        Log file path if file logging is enabled, None otherwise
+    """
+    log_to_file = os.getenv("LOG_TO_FILE", "false").lower() == "true"
+    
+    if not log_to_file:
+        return None
+    
+    log_dir = os.getenv("LOG_DIR", "logs")
+    timestamp = datetime.now().strftime("%Y%m%d")
+    
+    # Extract module suffix (e.g., 'auth' from 'gcm_agent.auth')
+    module_suffix = module_name.split(".")[-1] if "." in module_name else module_name
+    
+    log_file = f"{log_dir}/{module_suffix}_{timestamp}.log"
+    return log_file
+
+
 # Pre-configured loggers for common modules
 def get_config_logger() -> logging.Logger:
     """Get logger for configuration module."""
-    return get_logger("gcm_agent.config", level=logging.INFO)
+    level = _get_log_level_from_env()
+    log_file = _get_log_file_path("gcm_agent.config")
+    return get_logger("gcm_agent.config", level=level, log_file=log_file)
 
 
 def get_auth_logger() -> logging.Logger:
     """Get logger for authentication module."""
-    return get_logger("gcm_agent.auth", level=logging.INFO)
+    level = _get_log_level_from_env()
+    log_file = _get_log_file_path("gcm_agent.auth")
+    return get_logger("gcm_agent.auth", level=level, log_file=log_file)
 
 
 def get_mcp_logger() -> logging.Logger:
     """Get logger for MCP client module."""
-    return get_logger("gcm_agent.mcp", level=logging.INFO)
+    level = _get_log_level_from_env()
+    log_file = _get_log_file_path("gcm_agent.mcp")
+    return get_logger("gcm_agent.mcp", level=level, log_file=log_file)
 
 
 def get_agent_logger() -> logging.Logger:
     """Get logger for agent module."""
-    return get_logger("gcm_agent.agent", level=logging.INFO)
+    level = _get_log_level_from_env()
+    log_file = _get_log_file_path("gcm_agent.agent")
+    return get_logger("gcm_agent.agent", level=level, log_file=log_file)
 
 
 def get_ui_logger() -> logging.Logger:
     """Get logger for UI module."""
-    return get_logger("gcm_agent.ui", level=logging.INFO)
+    level = _get_log_level_from_env()
+    log_file = _get_log_file_path("gcm_agent.ui")
+    return get_logger("gcm_agent.ui", level=level, log_file=log_file)

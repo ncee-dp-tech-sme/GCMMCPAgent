@@ -97,6 +97,7 @@ class KeycloakAuthenticator:
             "client_secret": self.client_secret,
             "username": self.username,
             "password": self.password,
+            "scope": "openid",
         }
 
         try:

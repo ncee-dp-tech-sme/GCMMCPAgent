@@ -3,6 +3,7 @@
 # Made with Bob
 # 2026-06-05 22:14 UTC - Initial implementation of configuration UI with secure credential handling
 # 2026-06-05 21:03 UTC - Split Keycloak and GCM server configuration into separate tabs
+# 2026-06-05 21:50 UTC - Added WatsonX URL field and made model field editable
 
 from typing import Tuple, Optional
 import gradio as gr
@@ -26,7 +27,7 @@ from gcm_agent.utils.logger import get_ui_logger
 logger = get_ui_logger()
 
 
-def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str, str, str, str, str, bool, int, int, str]:
+def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str, str, str, str, str, str, str, bool, int, int, str]:
     """
     Load existing configuration from secure storage.
     
@@ -39,7 +40,7 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
         # Try to load configuration
         if not config_manager.load_config():
             logger.info("No existing configuration found")
-            return ("", 443, "master", True, "", "", True, "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, "No configuration found. Please enter your settings.")
+            return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, "No configuration found. Please enter your settings.")
         
         # Load each section
         keycloak_config = config_manager.get_keycloak_config()
@@ -67,6 +68,7 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
             password,
             auth_config.client_id,
             client_secret,
+            watsonx_config.url,
             watsonx_config.project_id,
             api_key,
             watsonx_config.model,
@@ -78,10 +80,10 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
         
     except (MissingConfigError, InvalidConfigError) as e:
         logger.warning(f"Configuration incomplete or invalid: {e}")
-        return ("", 443, "master", True, "", "", True, "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"⚠️ Configuration incomplete: {str(e)}")
+        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"⚠️ Configuration incomplete: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
-        return ("", 443, "master", True, "", "", True, "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"❌ Error loading configuration: {str(e)}")
+        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"❌ Error loading configuration: {str(e)}")
 
 
 def save_configuration(
@@ -96,6 +98,7 @@ def save_configuration(
     password: str,
     client_id: str,
     client_secret: str,
+    watsonx_url: str,
     project_id: str,
     api_key: str,
     model: str,
@@ -116,7 +119,7 @@ def save_configuration(
         config_manager = get_config_manager()
         
         # Validate required fields
-        if not all([keycloak_url, gcm_url, gcm_hostname, username, password, client_id, client_secret, project_id, api_key]):
+        if not all([keycloak_url, gcm_url, gcm_hostname, username, password, client_id, client_secret, watsonx_url, project_id, api_key, model]):
             return "❌ Error: All fields are required"
         
         # Create configuration objects (will validate)
@@ -139,6 +142,7 @@ def save_configuration(
         )
         
         watsonx_config = WatsonXConfig(
+            url=watsonx_url,
             project_id=project_id,
             model=model,
         )
@@ -324,6 +328,12 @@ def create_config_ui() -> gr.Blocks:
         
         with gr.Tab("🤖 WatsonX"):
             gr.Markdown("### WatsonX LLM Configuration")
+            watsonx_url = gr.Textbox(
+                label="WatsonX URL",
+                value="https://us-south.ml.cloud.ibm.com",
+                placeholder="https://us-south.ml.cloud.ibm.com",
+                info="WatsonX API endpoint URL"
+            )
             project_id = gr.Textbox(
                 label="Project ID",
                 placeholder="12345678-1234-1234-1234-123456789abc",
@@ -335,17 +345,13 @@ def create_config_ui() -> gr.Blocks:
                 placeholder="••••••••",
                 info="WatsonX API key (stored securely)"
             )
-            model = gr.Dropdown(
+            model = gr.Textbox(
                 label="Model",
-                choices=[
-                    "ibm/granite-13b-chat-v2",
-                    "ibm/granite-20b-multilingual",
-                    "meta-llama/llama-3-70b-instruct",
-                    "meta-llama/llama-3-1-70b-instruct",
-                ],
                 value="ibm/granite-13b-chat-v2",
-                info="Select the LLM model to use"
+                placeholder="ibm/granite-13b-chat-v2",
+                info="WatsonX model identifier (editable - enter any valid model ID)"
             )
+            gr.Markdown("**Common models:** `ibm/granite-13b-chat-v2`, `ibm/granite-20b-multilingual`, `meta-llama/llama-3-70b-instruct`, `ibm/granite-3-8b-instruct`")
         
         with gr.Tab("⚙️ Agent Settings"):
             gr.Markdown("### Agent Behavior Configuration")
@@ -393,7 +399,7 @@ def create_config_ui() -> gr.Blocks:
                 keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
                 gcm_url, gcm_hostname, gcm_verify_ssl,
                 username, password, client_id, client_secret,
-                project_id, api_key, model,
+                watsonx_url, project_id, api_key, model,
                 discovery_mode, max_iterations, timeout
             ],
             outputs=status
@@ -414,7 +420,7 @@ def create_config_ui() -> gr.Blocks:
                 keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
                 gcm_url, gcm_hostname, gcm_verify_ssl,
                 username, password, client_id, client_secret,
-                project_id, api_key, model,
+                watsonx_url, project_id, api_key, model,
                 discovery_mode, max_iterations, timeout,
                 status
             ]

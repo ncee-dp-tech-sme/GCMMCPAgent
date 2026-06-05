@@ -7,11 +7,23 @@ Main entry point for the GCM Agent with configuration and chat interfaces.
 # Made with Bob
 # 2026-06-05 22:16 UTC - Initial implementation of main application entry point
 # 2026-06-05 22:48 UTC - Removed show_api parameter (not supported in Gradio 6.0), changed server to listen on 127.0.0.1 for security
+# 2026-06-05 21:38 UTC - Added dotenv loading for environment variables including logging configuration
 
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 import gradio as gr
 
 from gcm_agent.ui import create_config_ui, create_chat_ui
 from gcm_agent.utils.logger import get_ui_logger
+
+# Load environment variables from .env file
+env_path = Path(__file__).parent / ".env"
+if env_path.exists():
+    load_dotenv(env_path)
+    print(f"Loaded environment variables from {env_path}")
+else:
+    print(f"No .env file found at {env_path}, using system environment variables")
 
 
 logger = get_ui_logger()

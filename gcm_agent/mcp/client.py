@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-05 22:01 UTC - Initial implementation of GCMMCPClient with streamable_http transport
+# 2026-06-05 21:47 UTC - Fixed MCP endpoint URL to /ibm/mcp/mcp and removed deprecated context manager usage
 
 from typing import Callable, Optional, List, Dict, Any
 import asyncio
@@ -88,11 +89,13 @@ class GCMMCPClient:
         try:
             # Create MCP client with streamable_http transport
             # This is critical for remote GCM server integration
+            # Note: As of langchain-mcp-adapters 0.1.0, MultiServerMCPClient
+            # should NOT be used as a context manager
             self._mcp_client = MultiServerMCPClient(
                 {
                     "gcm": {
                         "transport": "streamable_http",
-                        "url": f"{self.gcm_url}/mcp",
+                        "url": f"{self.gcm_url}/ibm/mcp/mcp",
                         "headers": {
                             "x-mcp-enable-discovery": "true" if self.discovery_mode else "false"
                         },
@@ -102,9 +105,7 @@ class GCMMCPClient:
                 }
             )
             
-            # Initialize the MCP client
-            await self._mcp_client.__aenter__()
-            
+            # Client is ready to use immediately (no context manager needed)
             self._connected = True
             self.logger.info(
                 f"Successfully connected to GCM MCP server "
@@ -133,9 +134,9 @@ class GCMMCPClient:
         self.logger.info("Disconnecting from GCM MCP server")
         
         try:
-            if self._mcp_client:
-                await self._mcp_client.__aexit__(None, None, None)
-                self._mcp_client = None
+            # Note: As of langchain-mcp-adapters 0.1.0, no explicit cleanup needed
+            # Just clear the reference
+            self._mcp_client = None
             
             self._connected = False
             self._tools_cache = None

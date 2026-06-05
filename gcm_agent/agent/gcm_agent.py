@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-05 22:11 UTC - Initial implementation of LangGraph agent following AGENTS.md patterns
+# 2026-06-05 21:51 UTC - Added WatsonX URL parameter to LLM initialization
 
 from typing import List, Optional, AsyncGenerator
 from datetime import datetime
@@ -89,10 +90,11 @@ class GCMAgent:
         Returns:
             Configured WatsonX LLM instance
         """
-        self.logger.debug(f"Initializing WatsonX LLM with model: {self.watsonx_config.model}")
+        self.logger.debug(f"Initializing WatsonX LLM with model: {self.watsonx_config.model} at {self.watsonx_config.url}")
         
         return WatsonxLLM(
             model_id=self.watsonx_config.model,
+            url=self.watsonx_config.url,
             project_id=self.watsonx_config.project_id,
             apikey=self.api_key,
             params={

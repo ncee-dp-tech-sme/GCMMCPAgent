@@ -380,21 +380,57 @@ The agent is designed for future integration with Watsonx Orchestrate:
 
 For detailed troubleshooting, see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
-### Log Files
+### Logging Configuration
 
-The agent maintains detailed logs:
+The agent supports configurable logging with environment variables:
 
-```
-gcm_agent.log          # Main application log
-gcm_agent_ui.log       # UI-specific log
-gcm_agent_config.log   # Configuration operations
-gcm_agent_auth.log     # Authentication log
-```
+**Enable Detailed Logging:**
 
-View logs:
+1. Add to your `.env` file (or set environment variables):
 ```bash
-tail -f gcm_agent.log
+LOG_LEVEL=DEBUG          # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+LOG_TO_FILE=true         # Enable file logging
+LOG_DIR=logs             # Directory for log files (default: logs)
 ```
+
+2. Restart the application:
+```bash
+python app.py
+```
+
+**Log Files:**
+
+When file logging is enabled, logs are stored in the `logs/` directory with daily rotation:
+
+```
+logs/
+├── config_20260605.log    # Configuration operations
+├── auth_20260605.log      # Authentication log
+├── mcp_20260605.log       # MCP client operations
+├── agent_20260605.log     # Agent execution log
+└── ui_20260605.log        # UI-specific log
+```
+
+**View Logs:**
+```bash
+# View all logs
+tail -f logs/*.log
+
+# View specific module
+tail -f logs/auth_20260605.log
+
+# Search for errors
+grep -i error logs/*.log
+```
+
+**Log Levels:**
+- `DEBUG`: Detailed diagnostic information (verbose)
+- `INFO`: General informational messages (default)
+- `WARNING`: Warning messages for potential issues
+- `ERROR`: Error messages for failures
+- `CRITICAL`: Critical errors requiring immediate attention
+
+**Note:** The `logs/` directory is automatically added to `.gitignore` to prevent committing sensitive log data.
 
 ## Contributing
 

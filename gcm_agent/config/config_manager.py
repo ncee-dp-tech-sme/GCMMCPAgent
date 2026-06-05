@@ -3,6 +3,7 @@
 # Made with Bob
 # 2026-06-05 19:53 UTC - Initial implementation of configuration manager with Pydantic models
 # 2026-06-05 21:02 UTC - Separated Keycloak configuration and added independent SSL verification
+# 2026-06-05 21:50 UTC - Added WatsonX URL configuration field
 
 import json
 import threading
@@ -97,11 +98,22 @@ class AuthConfig(BaseModel):
 class WatsonXConfig(BaseModel):
     """Configuration for WatsonX LLM (API key stored separately in keyring)."""
     
+    url: str = Field(
+        default="https://us-south.ml.cloud.ibm.com",
+        description="WatsonX API URL"
+    )
     project_id: str = Field(..., description="WatsonX project ID")
     model: str = Field(
         default="ibm/granite-13b-chat-v2",
         description="WatsonX model identifier"
     )
+
+    @validator("url")
+    def validate_url(cls, v):
+        """Validate URL format."""
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v.rstrip("/")
 
     @validator("project_id")
     def validate_project_id(cls, v):

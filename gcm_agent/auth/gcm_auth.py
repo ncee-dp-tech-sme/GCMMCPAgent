@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-05 21:58 UTC - Initial implementation of GCMAuthenticator with user management authorization
+# 2026-06-05 21:44 UTC - Fixed authorization endpoint to use /ibm/usermanagement/api/v2/authorization with tenantId payload
 
 from typing import Callable, Optional, Dict, Any
 
@@ -44,7 +45,7 @@ class GCMAuthenticator:
         Returns:
             Authorization endpoint URL
         """
-        return f"{self.gcm_url}/api/v1/user-management/authorize"
+        return f"{self.gcm_url}/ibm/usermanagement/api/v2/authorization"
 
     async def authorize(self, access_token: str, username: str) -> bool:
         """
@@ -53,7 +54,7 @@ class GCMAuthenticator:
 
         Args:
             access_token: OAuth2 access token from Keycloak
-            username: GCM username for authorization
+            username: GCM username for authorization (not used in v2 API)
 
         Returns:
             True if authorization successful
@@ -61,7 +62,7 @@ class GCMAuthenticator:
         Raises:
             GCMAuthError: If authorization fails
         """
-        self.logger.info(f"Authorizing user '{username}' with GCM user management")
+        self.logger.info(f"Authorizing with GCM user management (v2 API)")
 
         authorize_url = self._get_authorize_endpoint()
         headers = {
@@ -69,8 +70,7 @@ class GCMAuthenticator:
             "Content-Type": "application/json",
         }
         payload = {
-            "hostname": self.hostname,
-            "username": username,
+            "tenantId": ""
         }
 
         try:
