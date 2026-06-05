@@ -162,6 +162,7 @@ class GCMAuthenticator:
             >>> # Use client for MCP operations
         """
         verify_ssl = self.verify_ssl
+        logger = self.logger
 
         def factory(**kwargs) -> httpx.AsyncClient:
             """
@@ -183,6 +184,7 @@ class GCMAuthenticator:
                 "Content-Type": "application/json",
             }
 
+            logger.debug(f"Creating AsyncClient with verify_ssl={verify_ssl}")
             return httpx.AsyncClient(
                 headers=merged_headers,
                 verify=verify_ssl,
@@ -190,7 +192,7 @@ class GCMAuthenticator:
                 **kwargs,
             )
 
-        self.logger.debug("Created authenticated client factory")
+        self.logger.debug(f"Created authenticated client factory (verify_ssl={verify_ssl})")
         return factory
 
     def get_auth_headers(self, access_token: str) -> Dict[str, str]:
