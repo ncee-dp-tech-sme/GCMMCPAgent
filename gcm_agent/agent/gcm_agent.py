@@ -139,11 +139,13 @@ class GCMAgent:
         # Get system prompt based on discovery mode
         system_prompt = get_system_prompt(self.agent_config.discovery_mode)
         
+        # Bind system prompt to LLM (correct approach for LangGraph)
+        llm_with_prompt = self.llm.bind(system=system_prompt)
+        
         # Create agent using create_react_agent() wrapper (CRITICAL per AGENTS.md)
         agent = create_react_agent(
-            self.llm,
+            llm_with_prompt,
             self.tools,
-            state_modifier=system_prompt,
         )
         
         # Define async agent node
