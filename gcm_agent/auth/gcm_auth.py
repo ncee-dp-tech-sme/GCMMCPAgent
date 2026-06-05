@@ -167,9 +167,11 @@ class GCMAuthenticator:
             """
             Factory function to create authenticated AsyncClient.
             Merges authentication headers with any headers passed by MCP client.
+            Removes conflicting parameters to avoid duplicate keyword arguments.
             """
-            # Remove 'verify' from kwargs if present to avoid conflicts
+            # Remove parameters that we're setting explicitly to avoid conflicts
             kwargs.pop("verify", None)
+            kwargs.pop("timeout", None)
             
             # Get existing headers from kwargs if any
             existing_headers = kwargs.pop("headers", {})
