@@ -100,7 +100,7 @@ class GCMAgent:
             project_id=self.watsonx_config.project_id,
             apikey=self.api_key,
             params={
-                "max_new_tokens": 2048,
+                "max_tokens": 2048,  # Use max_tokens instead of max_new_tokens to avoid warning
                 "temperature": 0.7,
                 "top_p": 0.9,
                 "top_k": 50,
