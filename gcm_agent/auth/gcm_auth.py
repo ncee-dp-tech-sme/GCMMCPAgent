@@ -213,7 +213,7 @@ class GCMAuthenticator:
                 **kwargs,
             )
             
-            logger.debug(f"AsyncClient created successfully with verify={client._verify}")
+            logger.debug(f"AsyncClient created successfully with verify={verify_ssl}")
             return client
 
         self.logger.debug(f"Created authenticated client factory (verify_ssl={verify_ssl})")
