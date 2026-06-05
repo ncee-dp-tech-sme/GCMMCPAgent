@@ -97,7 +97,7 @@ async def create_gcm_mcp_client(
         )
         
         # Step 3: Create MCP client
-        logger.debug("Step 3: Creating MCP client")
+        logger.debug(f"Step 3: Creating MCP client with verify_ssl={gcm_config.verify_ssl}")
         mcp_client = GCMMCPClient(
             gcm_url=gcm_config.url,
             client_factory=client_factory,

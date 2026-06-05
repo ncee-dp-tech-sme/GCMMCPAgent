@@ -171,6 +171,7 @@ async def get_client_factory(
     )
     
     # Create GCM authenticator to get factory
+    logger.debug(f"Creating GCM authenticator with verify_ssl={gcm_config.verify_ssl}")
     gcm_auth = GCMAuthenticator(
         gcm_url=gcm_config.url,
         hostname=gcm_config.hostname,
@@ -178,7 +179,7 @@ async def get_client_factory(
     )
     
     factory = gcm_auth._client_factory(access_token, timeout)
-    logger.info("Client factory created successfully")
+    logger.info(f"Client factory created successfully with verify_ssl={gcm_config.verify_ssl}")
     
     return factory
 
