@@ -337,9 +337,25 @@ class GCMMCPClient:
             os.environ['PYTHONHTTPSVERIFY'] = '0'
             os.environ['CURL_CA_BUNDLE'] = ''
             os.environ['REQUESTS_CA_BUNDLE'] = ''
+            os.environ['SSL_CERT_FILE'] = ''
             self.logger.debug("Set SSL-related environment variables to disable verification")
             
-            # Method 3: Suppress SSL warnings
+            # Method 3: Monkey-patch httpx.AsyncClient to force verify=False
+            try:
+                import httpx
+                original_init = httpx.AsyncClient.__init__
+                
+                def patched_init(self, *args, **kwargs):
+                    # Force verify=False for all AsyncClient instances
+                    kwargs['verify'] = False
+                    return original_init(self, *args, **kwargs)
+                
+                httpx.AsyncClient.__init__ = patched_init
+                self.logger.debug("Monkey-patched httpx.AsyncClient to force verify=False")
+            except Exception as e:
+                self.logger.warning(f"Could not monkey-patch httpx.AsyncClient: {e}")
+            
+            # Method 4: Suppress SSL warnings
             warnings.filterwarnings('ignore', message='Unverified HTTPS request')
             warnings.filterwarnings('ignore', message='InsecureRequestWarning')
             
@@ -352,7 +368,7 @@ class GCMMCPClient:
                 pass
             
             self._ssl_context_applied = True
-            self.logger.info("SSL verification workaround applied successfully (all methods)")
+            self.logger.info("SSL verification workaround applied successfully (all methods including httpx monkey-patch)")
             
         except Exception as e:
             self.logger.error(f"Failed to apply SSL workaround: {e}")
