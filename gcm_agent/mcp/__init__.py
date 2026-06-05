@@ -103,6 +103,7 @@ async def create_gcm_mcp_client(
             client_factory=client_factory,
             discovery_mode=agent_config.discovery_mode,
             timeout=agent_config.timeout,
+            verify_ssl=gcm_config.verify_ssl,
         )
         
         # Step 4: Connect to MCP server

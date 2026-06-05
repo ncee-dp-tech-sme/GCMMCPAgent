@@ -1,12 +1,15 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-05 22:43 UTC - Added SSL verification workaround for self-signed certificates
 # 2026-06-05 22:01 UTC - Initial implementation of GCMMCPClient with streamable_http transport
 # 2026-06-05 21:47 UTC - Fixed MCP endpoint URL to /ibm/mcp/mcp and removed deprecated context manager usage
 # 2026-06-05 21:59 UTC - Fixed parameter name: client_factory -> httpx_client_factory
 
 from typing import Callable, Optional, List, Dict, Any
 import asyncio
+import ssl
+import warnings
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
@@ -41,6 +44,7 @@ class GCMMCPClient:
         client_factory: Callable,
         discovery_mode: bool = True,
         timeout: int = 300,
+        verify_ssl: bool = True,
     ):
         """
         Initialize GCM MCP Client.
@@ -52,11 +56,13 @@ class GCMMCPClient:
                 - True: Returns 4 discovery tools + 1 execute tool
                 - False: Returns all 26 application tools
             timeout: Request timeout in seconds (default 300)
+            verify_ssl: Verify SSL certificates (default True)
         """
         self.gcm_url = gcm_url.rstrip("/")
         self.client_factory = client_factory
         self.discovery_mode = discovery_mode
         self.timeout = timeout
+        self.verify_ssl = verify_ssl
         self.logger = get_mcp_logger()
         
         # Connection state
@@ -64,10 +70,11 @@ class GCMMCPClient:
         self._mcp_client: Optional[MultiServerMCPClient] = None
         self._tools_cache: Optional[List[Tool]] = None
         self._server_info: Optional[Dict[str, Any]] = None
+        self._ssl_context_applied = False
         
         self.logger.debug(
             f"GCMMCPClient initialized for {gcm_url} "
-            f"(discovery_mode={discovery_mode}, timeout={timeout}s)"
+            f"(discovery_mode={discovery_mode}, timeout={timeout}s, verify_ssl={verify_ssl})"
         )
     
     async def connect(self) -> None:
@@ -78,6 +85,9 @@ class GCMMCPClient:
         proper authentication headers. The x-mcp-enable-discovery header
         controls which tools are exposed by the server.
         
+        For self-signed certificates, applies SSL context workaround to
+        disable certificate verification at the SSL module level.
+        
         Raises:
             MCPConnectionError: If connection fails
         """
@@ -86,6 +96,10 @@ class GCMMCPClient:
             return
         
         self.logger.info(f"Connecting to GCM MCP server at {self.gcm_url}")
+        
+        # Apply SSL workaround if SSL verification is disabled
+        if not self.verify_ssl and not self._ssl_context_applied:
+            self._apply_ssl_workaround()
         
         try:
             # Create MCP client with streamable_http transport
@@ -295,6 +309,36 @@ class GCMMCPClient:
         except Exception as e:
             self.logger.warning(f"Failed to fetch server info: {e}")
             self._server_info = {}
+    
+    def _apply_ssl_workaround(self) -> None:
+        """
+        Apply SSL verification workaround for self-signed certificates.
+        
+        This is a workaround for cases where the MCP library creates HTTP clients
+        that don't use our client factory. It modifies the default SSL context
+        to disable certificate verification.
+        
+        WARNING: This affects all SSL connections in the process. Only use when
+        verify_ssl=False is explicitly set.
+        """
+        try:
+            self.logger.warning(
+                "Applying SSL verification workaround for self-signed certificates. "
+                "This will disable SSL verification for all HTTPS connections in this process."
+            )
+            
+            # Create unverified SSL context
+            ssl._create_default_https_context = ssl._create_unverified_context
+            
+            # Suppress SSL warnings
+            warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+            
+            self._ssl_context_applied = True
+            self.logger.debug("SSL verification workaround applied successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to apply SSL workaround: {e}")
+            # Don't raise - let the connection attempt proceed
     
     async def reconnect(self) -> None:
         """

@@ -169,10 +169,18 @@ class GCMAuthenticator:
             Factory function to create authenticated AsyncClient.
             Merges authentication headers with any headers passed by MCP client.
             Removes conflicting parameters to avoid duplicate keyword arguments.
+            
+            CRITICAL: SSL verification must be disabled for self-signed certificates.
+            We explicitly set verify=False and also handle any SSL context that might
+            be passed in kwargs to ensure SSL verification is truly disabled.
             """
             # Remove parameters that we're setting explicitly to avoid conflicts
             kwargs.pop("verify", None)
             kwargs.pop("timeout", None)
+            
+            # Also remove any SSL context that might override our verify setting
+            kwargs.pop("cert", None)
+            kwargs.pop("trust_env", None)
             
             # Get existing headers from kwargs if any
             existing_headers = kwargs.pop("headers", {})
@@ -184,13 +192,18 @@ class GCMAuthenticator:
                 "Content-Type": "application/json",
             }
 
-            logger.debug(f"Creating AsyncClient with verify_ssl={verify_ssl}")
-            return httpx.AsyncClient(
+            logger.debug(f"Creating AsyncClient with verify_ssl={verify_ssl}, kwargs={list(kwargs.keys())}")
+            
+            # Create client with explicit SSL verification setting
+            client = httpx.AsyncClient(
                 headers=merged_headers,
                 verify=verify_ssl,
                 timeout=timeout,
+                trust_env=False,  # Don't use environment SSL settings
                 **kwargs,
             )
+            
+            return client
 
         self.logger.debug(f"Created authenticated client factory (verify_ssl={verify_ssl})")
         return factory
