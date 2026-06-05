@@ -17,7 +17,7 @@ python-dotenv>=1.0.0
 langsmith==0.7.10
 
 # Security and credentials
-keyring>=24.0.0
+cryptography>=41.0.0
 
 # UI
 gradio>=4.0.0

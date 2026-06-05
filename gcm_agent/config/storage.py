@@ -1,11 +1,14 @@
-"""Secure storage module for keyring-backed persistence of sensitive GCM agent configuration values."""
+"""Secure storage module for Fernet encryption-based persistence of sensitive GCM agent configuration values."""
 
 # Made with Bob
 # 2026-06-05 19:52 UTC - Initial implementation of keyring-based secure storage
+# 2026-06-05 20:36 UTC - Replaced keyring with Fernet encryption-based storage
 
-import keyring
+from cryptography.fernet import Fernet, InvalidToken
+import json
+import os
+from pathlib import Path
 from typing import Optional, List
-from keyring.errors import KeyringError, PasswordDeleteError
 
 from gcm_agent.utils.logger import get_config_logger
 
@@ -16,8 +19,8 @@ class StorageError(Exception):
     pass
 
 
-class KeyringBackendError(StorageError):
-    """Raised when keyring backend is unavailable or fails."""
+class EncryptionError(StorageError):
+    """Raised when encryption/decryption operations fail."""
     pass
 
 
@@ -26,42 +29,152 @@ class CredentialNotFoundError(StorageError):
     pass
 
 
+class FilePermissionError(StorageError):
+    """Raised when file permission operations fail."""
+    pass
+
+
 class SecureStorage:
     """
-    Keyring-based secure storage for sensitive credentials.
-    Uses OS-level secure storage (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux).
+    Fernet encryption-based secure storage for sensitive credentials.
+    Stores encrypted credentials in ~/.gcm_agent/.credentials.enc with restrictive permissions.
     """
 
     SERVICE_NAME = "gcm-agent"
 
-    def __init__(self):
-        """Initialize secure storage with logging."""
-        self.logger = get_config_logger()
-        self._verify_keyring_backend()
-
-    def _verify_keyring_backend(self) -> None:
+    def __init__(self, storage_dir: Optional[str] = None):
         """
-        Verify that a keyring backend is available.
-        Raises KeyringBackendError if no backend is available.
+        Initialize secure storage with Fernet encryption.
+        
+        Args:
+            storage_dir: Directory to store encrypted credentials (default: ~/.gcm_agent)
+        """
+        self.logger = get_config_logger()
+        
+        if storage_dir is None:
+            storage_dir = os.path.expanduser("~/.gcm_agent")
+        
+        self.storage_dir = Path(storage_dir)
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.key_file = self.storage_dir / ".key"
+        self.credentials_file = self.storage_dir / ".credentials.enc"
+        
+        # Initialize or load encryption key
+        self._key = self._load_or_create_key()
+        self._fernet = Fernet(self._key)
+        
+        self.logger.debug(f"Initialized secure storage at: {self.storage_dir}")
+
+    def _load_or_create_key(self) -> bytes:
+        """
+        Load existing encryption key or create new one.
+        
+        Returns:
+            Encryption key bytes
+            
+        Raises:
+            FilePermissionError: If unable to set file permissions
+        """
+        if self.key_file.exists():
+            try:
+                with open(self.key_file, 'rb') as f:
+                    key = f.read()
+                self.logger.debug("Loaded existing encryption key")
+                return key
+            except Exception as e:
+                self.logger.error(f"Failed to load encryption key: {e}")
+                raise StorageError(f"Failed to load encryption key: {e}") from e
+        else:
+            try:
+                key = Fernet.generate_key()
+                with open(self.key_file, 'wb') as f:
+                    f.write(key)
+                # Set restrictive permissions (owner read/write only)
+                os.chmod(self.key_file, 0o600)
+                self.logger.info("Generated new encryption key")
+                return key
+            except OSError as e:
+                self.logger.error(f"Failed to set key file permissions: {e}")
+                raise FilePermissionError(f"Failed to set key file permissions: {e}") from e
+            except Exception as e:
+                self.logger.error(f"Failed to create encryption key: {e}")
+                raise StorageError(f"Failed to create encryption key: {e}") from e
+
+    def _load_credentials(self) -> dict:
+        """
+        Load and decrypt credentials from file.
+        
+        Returns:
+            Dictionary of credentials
+            
+        Raises:
+            EncryptionError: If decryption fails
+            StorageError: If file operations fail
+        """
+        if not self.credentials_file.exists():
+            return {}
+        
+        try:
+            with open(self.credentials_file, 'rb') as f:
+                encrypted_data = f.read()
+            
+            if not encrypted_data:
+                return {}
+            
+            decrypted_data = self._fernet.decrypt(encrypted_data)
+            credentials = json.loads(decrypted_data.decode())
+            self.logger.debug(f"Loaded {len(credentials)} credentials from storage")
+            return credentials
+        except InvalidToken as e:
+            self.logger.error("Failed to decrypt credentials: Invalid token or corrupted file")
+            raise EncryptionError("Failed to decrypt credentials: Invalid token or corrupted file") from e
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse credentials file: {e}")
+            raise StorageError(f"Corrupted credentials file: {e}") from e
+        except Exception as e:
+            self.logger.error(f"Failed to load credentials: {e}")
+            raise StorageError(f"Failed to load credentials: {e}") from e
+
+    def _save_credentials(self, credentials: dict) -> None:
+        """
+        Encrypt and save credentials to file.
+        
+        Args:
+            credentials: Dictionary of credentials to save
+            
+        Raises:
+            EncryptionError: If encryption fails
+            FilePermissionError: If unable to set file permissions
+            StorageError: If file operations fail
         """
         try:
-            backend = keyring.get_keyring()
-            self.logger.debug(f"Using keyring backend: {backend.__class__.__name__}")
+            json_data = json.dumps(credentials).encode()
+            encrypted_data = self._fernet.encrypt(json_data)
+            
+            with open(self.credentials_file, 'wb') as f:
+                f.write(encrypted_data)
+            
+            # Set restrictive permissions (owner read/write only)
+            os.chmod(self.credentials_file, 0o600)
+            self.logger.debug(f"Saved {len(credentials)} credentials to storage")
+        except OSError as e:
+            self.logger.error(f"Failed to set credentials file permissions: {e}")
+            raise FilePermissionError(f"Failed to set credentials file permissions: {e}") from e
         except Exception as e:
-            self.logger.error(f"Failed to initialize keyring backend: {e}")
-            raise KeyringBackendError(
-                "No keyring backend available. Please install a keyring backend for your OS."
-            ) from e
+            self.logger.error(f"Failed to save credentials: {e}")
+            raise StorageError(f"Failed to save credentials: {e}") from e
 
     def store_credential(self, key: str, value: str) -> None:
         """
-        Store a credential securely in the keyring.
+        Store a credential securely with encryption.
 
         Args:
             key: Credential identifier (e.g., "gcm_password")
             value: Credential value to store
 
         Raises:
+            ValueError: If key or value is invalid
             StorageError: If storage operation fails
         """
         if not key or not isinstance(key, str):
@@ -71,18 +184,19 @@ class SecureStorage:
             raise ValueError("Value must be a non-empty string")
 
         try:
-            keyring.set_password(self.SERVICE_NAME, key, value)
+            credentials = self._load_credentials()
+            credentials[key] = value
+            self._save_credentials(credentials)
             self.logger.info(f"Stored credential: {key}")
-        except KeyringError as e:
+        except (EncryptionError, FilePermissionError) as e:
+            raise
+        except Exception as e:
             self.logger.error(f"Failed to store credential '{key}': {e}")
             raise StorageError(f"Failed to store credential '{key}'") from e
-        except Exception as e:
-            self.logger.error(f"Unexpected error storing credential '{key}': {e}")
-            raise StorageError(f"Unexpected error storing credential '{key}'") from e
 
     def get_credential(self, key: str) -> Optional[str]:
         """
-        Retrieve a credential from the keyring.
+        Retrieve a credential from encrypted storage.
 
         Args:
             key: Credential identifier
@@ -91,28 +205,29 @@ class SecureStorage:
             Credential value if found, None otherwise
 
         Raises:
+            ValueError: If key is invalid
             StorageError: If retrieval operation fails
         """
         if not key or not isinstance(key, str):
             raise ValueError("Key must be a non-empty string")
 
         try:
-            value = keyring.get_password(self.SERVICE_NAME, key)
+            credentials = self._load_credentials()
+            value = credentials.get(key)
             if value is not None:
                 self.logger.debug(f"Retrieved credential: {key}")
             else:
                 self.logger.debug(f"Credential not found: {key}")
             return value
-        except KeyringError as e:
+        except (EncryptionError, FilePermissionError) as e:
+            raise
+        except Exception as e:
             self.logger.error(f"Failed to retrieve credential '{key}': {e}")
             raise StorageError(f"Failed to retrieve credential '{key}'") from e
-        except Exception as e:
-            self.logger.error(f"Unexpected error retrieving credential '{key}': {e}")
-            raise StorageError(f"Unexpected error retrieving credential '{key}'") from e
 
     def delete_credential(self, key: str) -> bool:
         """
-        Delete a credential from the keyring.
+        Delete a credential from encrypted storage.
 
         Args:
             key: Credential identifier
@@ -121,56 +236,48 @@ class SecureStorage:
             True if credential was deleted, False if it didn't exist
 
         Raises:
+            ValueError: If key is invalid
             StorageError: If deletion operation fails
         """
         if not key or not isinstance(key, str):
             raise ValueError("Key must be a non-empty string")
 
         try:
-            keyring.delete_password(self.SERVICE_NAME, key)
-            self.logger.info(f"Deleted credential: {key}")
-            return True
-        except PasswordDeleteError:
-            # Credential doesn't exist
-            self.logger.debug(f"Credential not found for deletion: {key}")
-            return False
-        except KeyringError as e:
+            credentials = self._load_credentials()
+            if key in credentials:
+                del credentials[key]
+                self._save_credentials(credentials)
+                self.logger.info(f"Deleted credential: {key}")
+                return True
+            else:
+                self.logger.debug(f"Credential not found for deletion: {key}")
+                return False
+        except (EncryptionError, FilePermissionError) as e:
+            raise
+        except Exception as e:
             self.logger.error(f"Failed to delete credential '{key}': {e}")
             raise StorageError(f"Failed to delete credential '{key}'") from e
-        except Exception as e:
-            self.logger.error(f"Unexpected error deleting credential '{key}': {e}")
-            raise StorageError(f"Unexpected error deleting credential '{key}'") from e
 
     def list_credentials(self) -> List[str]:
         """
-        List all stored credential keys for this service.
-
-        Note: This method attempts to retrieve known credential keys.
-        Keyring doesn't provide a native list operation, so we check
-        for common credential keys used by the GCM agent.
+        List all stored credential keys.
 
         Returns:
             List of credential keys that exist in storage
+            
+        Raises:
+            StorageError: If list operation fails
         """
-        # Known credential keys used by GCM agent
-        known_keys = [
-            "config",
-            "gcm_password",
-            "gcm_client_secret",
-            "watsonx_api_key",
-        ]
-
-        existing_keys = []
-        for key in known_keys:
-            try:
-                if self.get_credential(key) is not None:
-                    existing_keys.append(key)
-            except StorageError:
-                # Skip keys that cause errors
-                continue
-
-        self.logger.debug(f"Found {len(existing_keys)} stored credentials")
-        return existing_keys
+        try:
+            credentials = self._load_credentials()
+            keys = list(credentials.keys())
+            self.logger.debug(f"Found {len(keys)} stored credentials")
+            return keys
+        except (EncryptionError, FilePermissionError) as e:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to list credentials: {e}")
+            raise StorageError(f"Failed to list credentials: {e}") from e
 
     def credential_exists(self, key: str) -> bool:
         """
@@ -189,7 +296,7 @@ class SecureStorage:
 
     def clear_all_credentials(self) -> int:
         """
-        Delete all stored credentials for this service.
+        Delete all stored credentials.
 
         Returns:
             Number of credentials deleted
@@ -197,19 +304,17 @@ class SecureStorage:
         Raises:
             StorageError: If deletion operations fail
         """
-        credentials = self.list_credentials()
-        deleted_count = 0
-
-        for key in credentials:
-            try:
-                if self.delete_credential(key):
-                    deleted_count += 1
-            except StorageError as e:
-                self.logger.warning(f"Failed to delete credential '{key}': {e}")
-                # Continue deleting other credentials
-
-        self.logger.info(f"Cleared {deleted_count} credentials")
-        return deleted_count
+        try:
+            credentials = self._load_credentials()
+            count = len(credentials)
+            self._save_credentials({})
+            self.logger.info(f"Cleared {count} credentials")
+            return count
+        except (EncryptionError, FilePermissionError) as e:
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to clear credentials: {e}")
+            raise StorageError(f"Failed to clear credentials: {e}") from e
 
     def migrate_from_env(self, env_vars: dict) -> int:
         """
@@ -262,7 +367,7 @@ def get_storage() -> SecureStorage:
         SecureStorage instance
 
     Raises:
-        KeyringBackendError: If keyring backend is unavailable
+        StorageError: If storage initialization fails
     """
     global _storage_instance
     if _storage_instance is None:

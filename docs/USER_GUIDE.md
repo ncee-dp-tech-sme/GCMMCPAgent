@@ -24,7 +24,7 @@ The GCM Agent is an AI-powered assistant that provides natural language interact
 ### Key Features
 
 - **Natural Language Interface**: Ask questions and give commands in plain English
-- **Secure Credential Storage**: All sensitive data stored in your operating system's secure keyring
+- **Secure Credential Storage**: All sensitive data encrypted with Fernet encryption and stored locally
 - **Two-Step Authentication**: OAuth2 flow with Keycloak and GCM user management
 - **Dynamic Tool Discovery**: Automatically loads only the tools you need for optimal performance
 - **Local Execution**: Runs entirely on your machine without cloud dependencies
@@ -105,12 +105,12 @@ Provide your GCM authentication credentials:
 
 | Field | Description | Security |
 |-------|-------------|----------|
-| **Username** | Your GCM username | Stored in keyring |
-| **Password** | Your GCM password | Encrypted in OS keyring |
-| **Client ID** | OAuth2 client identifier | Stored in keyring |
-| **Client Secret** | OAuth2 client secret | Encrypted in OS keyring |
+| **Username** | Your GCM username | Encrypted locally |
+| **Password** | Your GCM password | Encrypted with Fernet |
+| **Client ID** | OAuth2 client identifier | Encrypted locally |
+| **Client Secret** | OAuth2 client secret | Encrypted with Fernet |
 
-> **Security Note:** All passwords and secrets are stored in your operating system's secure credential storage (Keychain on macOS, Credential Manager on Windows, Secret Service on Linux). They are never stored in plain text files.
+> **Security Note:** All passwords and secrets are encrypted using Fernet encryption and stored in `~/.gcm_agent/.credentials.enc` with restrictive file permissions (0o600). They are never stored in plain text files.
 
 #### 🤖 WatsonX Configuration
 
@@ -119,7 +119,7 @@ Configure the AI model backend:
 | Field | Description | Example |
 |-------|-------------|---------|
 | **Project ID** | WatsonX project identifier | `12345678-1234-1234-1234-123456789abc` |
-| **API Key** | WatsonX API key | Encrypted in OS keyring |
+| **API Key** | WatsonX API key | Encrypted with Fernet |
 | **Model** | LLM model to use | `ibm/granite-13b-chat-v2` |
 
 **Available Models:**
@@ -559,19 +559,19 @@ A: Yes, the agent requires connectivity to:
 - WatsonX services (cloud-based)
 - Keycloak authentication server
 
-**Q: Can multiple users share one configuration?**  
-A: No, configuration is stored per-user in the OS keyring. Each user must configure their own credentials.
+**Q: Can multiple users share one configuration?**
+A: No, configuration is stored per-user in `~/.gcm_agent/` directory. Each user must configure their own credentials.
 
 **Q: Is my data sent to the cloud?**  
 A: Only your prompts and GCM responses are sent to WatsonX for AI processing. Your credentials and configuration remain local.
 
 ### Configuration Questions
 
-**Q: Where are my credentials stored?**  
-A: In your operating system's secure credential storage:
-- macOS: Keychain
-- Windows: Credential Manager
-- Linux: Secret Service (GNOME Keyring, KWallet, etc.)
+**Q: Where are my credentials stored?**
+A: In the `~/.gcm_agent/` directory in your home folder:
+- Encryption key: `~/.gcm_agent/.key` (0o600 permissions)
+- Encrypted credentials: `~/.gcm_agent/.credentials.enc` (0o600 permissions)
+- Both files are protected with restrictive permissions (owner read/write only)
 
 **Q: Can I use environment variables instead?**  
 A: The agent is designed to use secure storage, not environment variables. This is a security best practice to prevent credential exposure.

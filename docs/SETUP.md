@@ -46,11 +46,7 @@ sudo apt update
 # Install Python 3.10+ and required packages
 sudo apt install python3.10 python3.10-venv python3-pip
 
-# Install keyring backend dependencies
-sudo apt install gnome-keyring libsecret-1-0 libsecret-1-dev
-
-# For headless servers, install dbus
-sudo apt install dbus-x11
+# No additional packages required for Fernet encryption
 ```
 
 #### Linux (RHEL/CentOS/Fedora)
@@ -59,11 +55,7 @@ sudo apt install dbus-x11
 # Install Python 3.10+ and required packages
 sudo dnf install python3.10 python3-pip
 
-# Install keyring backend dependencies
-sudo dnf install gnome-keyring libsecret libsecret-devel
-
-# For headless servers
-sudo dnf install dbus-x11
+# No additional packages required for Fernet encryption
 ```
 
 #### Windows
@@ -73,7 +65,7 @@ sudo dnf install dbus-x11
    - During installation, check "Add Python to PATH"
    - Verify installation: `python --version`
 
-2. **No additional packages required** - Windows Credential Manager is built-in
+2. **No additional packages required** - Fernet encryption is included in the cryptography package
 
 ### Required Access
 
@@ -172,7 +164,7 @@ pip install -r requirements.txt
 
 # Verify installation
 pip list
-# Should show langchain, langgraph, gradio, keyring, etc.
+# Should show langchain, langgraph, gradio, cryptography, etc.
 ```
 
 ### Step 4: Install Package in Development Mode
@@ -196,15 +188,15 @@ python --version
 # Verify key packages
 python -c "import langchain; import langgraph; import gradio; print('All packages imported successfully')"
 
-# Check keyring backend
-python -c "import keyring; print(f'Keyring backend: {keyring.get_keyring()}')"
+# Check cryptography package
+python -c "from cryptography.fernet import Fernet; print('Fernet encryption available')"
 ```
 
 Expected output:
 ```
 Python 3.10.x (or higher)
 All packages imported successfully
-Keyring backend: keyring.backends.macOS.Keyring (or appropriate for your OS)
+Fernet encryption available
 ```
 
 ---
@@ -344,7 +336,7 @@ Under **⚙️ Agent Settings**:
 1. Click **💾 Save Configuration**
 2. Wait for confirmation: "✅ Configuration saved successfully"
 
-Your configuration is now securely stored in your operating system's keyring.
+Your configuration is now securely encrypted and stored in `~/.gcm_agent/`.
 
 ### Testing Your Configuration
 
@@ -369,30 +361,19 @@ If you've previously configured the agent:
 
 ### Verify Secure Storage
 
-Check that credentials are properly stored:
-
-#### macOS
+Check that credentials are properly encrypted and stored:
 
 ```bash
-# Check Keychain for stored credentials
-security find-generic-password -s "gcm_agent" -a "gcm_password"
-# Should show: password: <exists>
-```
+# Check that storage directory exists
+ls -la ~/.gcm_agent/
 
-#### Linux
+# Should show:
+# .key (encryption key, 0o600 permissions)
+# .credentials.enc (encrypted credentials, 0o600 permissions)
 
-```bash
-# Check Secret Service
-secret-tool search service gcm_agent
-# Should list stored credentials
-```
-
-#### Windows
-
-```powershell
-# Check Credential Manager
-cmdkey /list | findstr gcm_agent
-# Should show stored credentials
+# Verify file permissions (should be 0o600 - owner read/write only)
+stat -c "%a %n" ~/.gcm_agent/.key ~/.gcm_agent/.credentials.enc  # Linux
+stat -f "%Lp %N" ~/.gcm_agent/.key ~/.gcm_agent/.credentials.enc  # macOS
 ```
 
 ### Verify Agent Initialization
@@ -586,30 +567,37 @@ pip install langgraph
 # etc.
 ```
 
-### Keyring Backend Issues
+### Encryption Key Issues
 
-**Problem:** No keyring backend available
+**Problem:** Cannot create or access encryption key
 
-**Linux Solution:**
+**Solution:**
 ```bash
-# Install keyring backend
-sudo apt install gnome-keyring libsecret-1-0
+# Check storage directory permissions
+ls -la ~/.gcm_agent/
 
-# Start keyring daemon
-eval $(gnome-keyring-daemon --start)
-export $(gnome-keyring-daemon --start)
+# If directory doesn't exist or has wrong permissions
+rm -rf ~/.gcm_agent/
+mkdir -p ~/.gcm_agent/
+chmod 700 ~/.gcm_agent/
 
-# Verify
-python -c "import keyring; print(keyring.get_keyring())"
+# Restart the application to regenerate encryption key
+python app.py
 ```
 
-**Headless Server Solution:**
-```bash
-# Use file-based keyring (less secure, for testing only)
-pip install keyrings.alt
+**Problem:** Corrupted encryption key or credentials file
 
-# Set backend
-export PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
+**Solution:**
+```bash
+# Backup existing files (if needed)
+cp ~/.gcm_agent/.key ~/.gcm_agent/.key.backup
+cp ~/.gcm_agent/.credentials.enc ~/.gcm_agent/.credentials.enc.backup
+
+# Remove corrupted files
+rm ~/.gcm_agent/.key ~/.gcm_agent/.credentials.enc
+
+# Restart application and reconfigure
+python app.py
 ```
 
 ### Port Already in Use

@@ -204,64 +204,76 @@ openssl s_client -connect gcm.example.com:443 -showcerts
 
 ## Configuration Problems
 
-### Keyring Backend Errors
+### Encryption Storage Errors
 
 #### Symptom
 ```
-❌ Storage error: No keyring backend available
+❌ Storage error: Failed to create encryption key
+❌ Storage error: Failed to load credentials
+❌ EncryptionError: Invalid token or corrupted file
 ```
 
 #### Solutions
 
-**macOS**
+**Cannot Create Storage Directory**
 ```bash
-# Keychain should work by default
-# If issues persist, reset keychain access
-security unlock-keychain ~/Library/Keychains/login.keychain-db
+# Check if directory exists and has correct permissions
+ls -la ~/.gcm_agent/
 
-# Verify keyring
-python -c "import keyring; print(keyring.get_keyring())"
-# Expected: keyring.backends.macOS.Keyring
-```
-
-**Linux (with GUI)**
-```bash
-# Install GNOME Keyring
-sudo apt install gnome-keyring libsecret-1-0
-
-# Start keyring daemon
-eval $(gnome-keyring-daemon --start)
-export $(gnome-keyring-daemon --start)
+# Create directory with correct permissions
+mkdir -p ~/.gcm_agent/
+chmod 700 ~/.gcm_agent/
 
 # Verify
-python -c "import keyring; print(keyring.get_keyring())"
-# Expected: keyring.backends.SecretService.Keyring
+ls -ld ~/.gcm_agent/
+# Should show: drwx------ (700 permissions)
 ```
 
-**Linux (Headless Server)**
+**Corrupted Encryption Key**
 ```bash
-# Install alternative keyring backend
-pip install keyrings.alt
+# Backup existing key (if needed)
+cp ~/.gcm_agent/.key ~/.gcm_agent/.key.backup
 
-# Use file-based keyring (less secure, for testing)
-export PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
+# Remove corrupted key
+rm ~/.gcm_agent/.key
 
-# Or use encrypted file backend
-export PYTHON_KEYRING_BACKEND=keyrings.alt.file.EncryptedKeyring
+# Restart application to regenerate
+python app.py
+# New key will be created automatically
 ```
 
-**Windows**
-```powershell
-# Windows Credential Manager should work by default
-# If issues persist, check Windows services
-Get-Service -Name "VaultSvc" | Select-Object Status
+**Corrupted Credentials File**
+```bash
+# Backup existing credentials (if needed)
+cp ~/.gcm_agent/.credentials.enc ~/.gcm_agent/.credentials.enc.backup
 
-# Start if stopped
-Start-Service -Name "VaultSvc"
+# Remove corrupted file
+rm ~/.gcm_agent/.credentials.enc
+
+# Reconfigure in the UI
+# Navigate to Configuration tab and re-enter credentials
+```
+
+**Permission Denied Errors**
+```bash
+# Fix ownership
+sudo chown -R $USER:$USER ~/.gcm_agent/
+
+# Fix permissions
+chmod 700 ~/.gcm_agent/
+chmod 600 ~/.gcm_agent/.key
+chmod 600 ~/.gcm_agent/.credentials.enc
 
 # Verify
-python -c "import keyring; print(keyring.get_keyring())"
-# Expected: keyring.backends.Windows.WinVaultKeyring
+ls -la ~/.gcm_agent/
+# .key and .credentials.enc should show: -rw------- (600 permissions)
+```
+
+**Verify Encryption is Working**
+```bash
+# Test Fernet encryption
+python -c "from cryptography.fernet import Fernet; key = Fernet.generate_key(); f = Fernet(key); encrypted = f.encrypt(b'test'); decrypted = f.decrypt(encrypted); print('Encryption working:', decrypted == b'test')"
+# Should print: Encryption working: True
 ```
 
 ---
@@ -903,8 +915,11 @@ pip list | grep langchain
 ping gcm.example.com
 curl -k https://gcm.example.com
 
-# Check keyring
-python -c "import keyring; print(keyring.get_keyring())"
+# Check encryption
+python -c "from cryptography.fernet import Fernet; print('Fernet available')"
+
+# Check storage
+ls -la ~/.gcm_agent/
 
 # Check configuration
 python -c "from gcm_agent.config import get_config_manager; print(get_config_manager().is_configured())"
@@ -1020,10 +1035,10 @@ Use this template:
 | Can't connect to GCM | Check URL, test with curl, verify network |
 | Invalid credentials | Re-enter carefully, test with curl |
 | SSL errors | Install CA cert or disable SSL (testing only) |
-| Keyring errors | Install keyring backend, check permissions |
+| Encryption errors | Check ~/.gcm_agent/ permissions, regenerate key |
 | Slow initialization | Enable discovery mode, check network |
 | Agent not responding | Reinitialize agent, check logs |
-| Configuration not saving | Check keyring, verify permissions |
+| Configuration not saving | Check storage permissions, verify ~/.gcm_agent/ |
 | UI not loading | Verify app running, check port, try different browser |
 
 ### Emergency Recovery

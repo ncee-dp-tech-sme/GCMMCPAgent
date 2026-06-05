@@ -12,7 +12,7 @@ The GCM Agent enables you to manage cryptographic assets, query key information,
 ### Key Features
 
 - 🗣️ **Natural Language Interface** - Ask questions and give commands in plain English
-- 🔒 **Secure Credential Storage** - All sensitive data stored in OS-native keyring (Keychain, Credential Manager, Secret Service)
+- 🔒 **Secure Credential Storage** - All sensitive data encrypted with Fernet encryption and stored locally
 - 🔐 **Two-Step Authentication** - OAuth2 flow with Keycloak and GCM user management
 - 🔍 **Dynamic Tool Discovery** - Automatically loads only the tools you need for optimal performance
 - 💻 **Local Execution** - Runs entirely on your machine without cloud dependencies
@@ -166,7 +166,7 @@ GCMMCPAgent/
 │   ├── __init__.py
 │   ├── config/             # Configuration management
 │   │   ├── config_manager.py    # Secure config with Pydantic models
-│   │   └── storage.py           # OS keyring integration
+│   │   └── storage.py           # Fernet encryption storage
 │   ├── auth/               # Authentication
 │   │   ├── keycloak_auth.py     # OAuth2 token retrieval
 │   │   └── gcm_auth.py          # GCM authorization
@@ -204,7 +204,7 @@ GCMMCPAgent/
 
 ### Secure Configuration Management
 
-- **OS-Native Keyring Storage**: Credentials stored in Keychain (macOS), Credential Manager (Windows), or Secret Service (Linux)
+- **Fernet Encryption Storage**: Credentials encrypted with Fernet and stored in `~/.gcm_agent/` with restrictive permissions
 - **No Environment Variables**: Security-first approach prevents credential exposure
 - **Pydantic Validation**: Type-safe configuration with automatic validation
 - **Thread-Safe Singleton**: Consistent configuration access across components
@@ -259,7 +259,7 @@ langchain-ibm>=0.1.0       # IBM WatsonX integration
 langchain-mcp-adapters     # MCP protocol support
 httpx>=0.25.0              # Async HTTP client
 pydantic>=2.0.0            # Data validation
-keyring>=24.0.0            # Secure credential storage
+cryptography>=41.0.0       # Fernet encryption for credentials
 gradio>=4.0.0              # Web UI framework
 pytest>=7.4.0              # Testing framework
 ```
@@ -274,10 +274,10 @@ pytest>=7.4.0              # Testing framework
 
 ### Credential Storage
 
-- ✅ **Secure**: OS-native keyring (Keychain, Credential Manager, Secret Service)
-- ✅ **Encrypted**: Credentials encrypted at rest
-- ✅ **Per-User**: Each user has isolated credential storage
-- ❌ **No Plain Text**: Never stored in files or environment variables
+- ✅ **Secure**: Fernet encryption with restrictive file permissions (0o600)
+- ✅ **Encrypted**: Credentials encrypted at rest in `~/.gcm_agent/`
+- ✅ **Per-User**: Each user has isolated credential storage in their home directory
+- ❌ **No Plain Text**: Never stored in plain text files or environment variables
 
 ### SSL/TLS
 
@@ -373,7 +373,7 @@ The agent is designed for future integration with Watsonx Orchestrate:
 | Can't connect to GCM | Verify URL, test with curl, check network |
 | Invalid credentials | Re-enter carefully, test connection |
 | SSL errors | Install CA certificate or disable SSL (testing only) |
-| Keyring errors | Install keyring backend, check permissions |
+| Encryption errors | Check ~/.gcm_agent/ permissions, regenerate key |
 | Slow initialization | Enable discovery mode |
 | Agent not responding | Reinitialize agent, check logs |
 
@@ -453,7 +453,7 @@ Built with:
 
 ### Current Version (1.0)
 - ✅ Local deployment with Gradio UI
-- ✅ Secure keyring-based configuration
+- ✅ Secure Fernet encryption-based configuration
 - ✅ Two-step OAuth2 authentication
 - ✅ Dynamic tool discovery
 - ✅ LangGraph agent with WatsonX
