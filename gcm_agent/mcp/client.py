@@ -3,6 +3,7 @@
 # Made with Bob
 # 2026-06-05 22:01 UTC - Initial implementation of GCMMCPClient with streamable_http transport
 # 2026-06-05 21:47 UTC - Fixed MCP endpoint URL to /ibm/mcp/mcp and removed deprecated context manager usage
+# 2026-06-05 21:59 UTC - Fixed parameter name: client_factory -> httpx_client_factory
 
 from typing import Callable, Optional, List, Dict, Any
 import asyncio
@@ -99,7 +100,7 @@ class GCMMCPClient:
                         "headers": {
                             "x-mcp-enable-discovery": "true" if self.discovery_mode else "false"
                         },
-                        "client_factory": self.client_factory,
+                        "httpx_client_factory": self.client_factory,
                         "timeout": self.timeout,
                     }
                 }
