@@ -301,7 +301,6 @@ def create_chat_ui() -> gr.Blocks:
             height=500,
             show_label=True,
             avatar_images=(None, "🤖"),
-            type="messages",  # Explicitly use messages format (Gradio 6.0+)
         )
         
         with gr.Row():
