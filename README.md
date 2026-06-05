@@ -283,8 +283,21 @@ pytest>=7.4.0              # Testing framework
 ### SSL/TLS
 
 - ✅ **Enabled by Default**: SSL verification enabled for all connections
-- ✅ **Certificate Validation**: Validates server certificates
-- ⚠️ **Disable for Testing Only**: Can be disabled for development environments
+- ✅ **Certificate Validation**: Validates server certificates against trusted CAs
+- ✅ **Independent Settings**: Separate SSL verification for Keycloak and GCM servers
+- ⚠️ **Self-Signed Certificates**: Can be disabled for development/testing environments
+- ⚠️ **Security Warning**: Disabling SSL verification affects all HTTPS connections in the process
+
+**For Self-Signed Certificates:**
+
+If your GCM or Keycloak servers use self-signed certificates, you can disable SSL verification in the Configuration UI:
+
+1. Navigate to the **⚙️ Configuration** tab
+2. Uncheck **"Verify SSL"** for the affected server (Keycloak or GCM)
+3. Save the configuration
+4. Re-initialize the agent
+
+**Note:** When SSL verification is disabled, the agent applies a process-wide SSL context workaround to handle self-signed certificates. This is logged with a warning message for transparency.
 
 ### RBAC Enforcement
 
@@ -373,10 +386,12 @@ The agent is designed for future integration with Watsonx Orchestrate:
 |-------|----------|
 | Can't connect to GCM | Verify URL, test with curl, check network |
 | Invalid credentials | Re-enter carefully, test connection |
-| SSL errors | Install CA certificate or disable SSL (testing only) |
+| SSL certificate errors | Uncheck "Verify SSL" in Configuration for self-signed certs |
+| Tool limit exceeded | Enable discovery mode (limits tools to 128 for WatsonX) |
 | Encryption errors | Check ~/.gcm_agent/ permissions, regenerate key |
 | Slow initialization | Enable discovery mode |
 | Agent not responding | Reinitialize agent, check logs |
+| Gradio message format error | Update to latest version (fixed in v1.0) |
 
 For detailed troubleshooting, see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 

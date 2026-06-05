@@ -98,6 +98,11 @@ Configure your connection to the Keycloak authentication server:
 
 > **Note:** The Keycloak URL is used for OAuth2 token authentication.
 
+**SSL Verification for Keycloak:**
+- ✅ **Enabled (Recommended)**: Validates Keycloak server certificates against trusted CAs
+- ⚠️ **Disabled (Self-Signed Certs)**: Uncheck for development/testing with self-signed certificates
+- When disabled, a warning is logged and SSL verification is bypassed for Keycloak connections
+
 #### 🖥️ GCM Server Settings
 
 Configure your connection to the GCM MCP server:
@@ -109,6 +114,28 @@ Configure your connection to the GCM MCP server:
 | **Verify SSL** | Enable SSL certificate verification for GCM | ✅ Enabled (recommended) |
 
 > **Note:** The GCM URL is used for both MCP operations and user management authorization. The `/ibm/mcp/mcp` path is added automatically.
+
+**SSL Verification for GCM:**
+- ✅ **Enabled (Recommended)**: Validates GCM server certificates against trusted CAs
+- ⚠️ **Disabled (Self-Signed Certs)**: Uncheck for development/testing with self-signed certificates
+- When disabled, applies a process-wide SSL context workaround to handle self-signed certificates
+- **Security Warning**: Disabling SSL verification affects all HTTPS connections in the process
+
+**Troubleshooting SSL Errors:**
+
+If you encounter SSL certificate verification errors like:
+```
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate
+```
+
+**Solution:**
+1. Go to the **⚙️ Configuration** tab
+2. Uncheck the **"Verify SSL"** checkbox for the affected server (Keycloak or GCM)
+3. Click **💾 Save Configuration**
+4. Return to the **💬 Chat** tab
+5. Click **🚀 Initialize Agent** to apply the new settings
+
+**Note:** SSL verification settings are independent for Keycloak and GCM, allowing you to disable verification for one server while keeping it enabled for the other.
 
 #### 🔐 Authentication Settings
 

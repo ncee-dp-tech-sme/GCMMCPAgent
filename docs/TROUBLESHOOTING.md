@@ -143,19 +143,44 @@ curl -k -X POST "https://gcm.example.com:443/auth/realms/master/protocol/openid-
 
 ### SSL Certificate Issues
 
-#### Symptom
+#### Symptoms
+
+**Self-Signed Certificate Error:**
+```
+❌ Agent error: Agent streaming failed: Error calling tool 'gcm_getCertificateDashboard':
+Request error (ConnectError): [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed:
+self-signed certificate (_ssl.c:1004)
+```
+
+**General SSL Verification Error:**
 ```
 ❌ SSL verification failed: certificate verify failed
 ```
 
-#### Temporary Solution (Testing Only)
-1. In Configuration tab, uncheck "Verify SSL Certificates"
-2. Save configuration
-3. Test connection
+#### Quick Solution (Development/Testing)
 
-> **Warning:** Only use this for testing. Never disable SSL verification in production.
+For development and testing environments with self-signed certificates:
 
-#### Proper Solutions
+1. **Open Configuration Tab** in the GCM Agent UI
+2. **Uncheck "Verify SSL"** for the affected server:
+   - Uncheck for **Keycloak** if Keycloak uses self-signed certificates
+   - Uncheck for **GCM Server** if GCM uses self-signed certificates
+   - You can disable SSL verification independently for each server
+3. **Click "💾 Save Configuration"**
+4. **Return to Chat Tab** and click **"🚀 Initialize Agent"**
+5. **Verify** the agent initializes without SSL errors
+
+**What Happens When SSL Verification is Disabled:**
+- The agent applies a process-wide SSL context workaround
+- A warning message is logged: `"Applying SSL verification workaround for self-signed certificates"`
+- All HTTPS connections in the process will bypass certificate verification
+- This is safe for development/testing but should not be used in production
+
+> **Security Warning:** Disabling SSL verification affects all HTTPS connections in the process. Only use this for development/testing environments with self-signed certificates. Never disable SSL verification in production.
+
+#### Production Solutions
+
+For production environments, properly install the CA certificate:
 
 **1. Install CA Certificate (macOS)**
 ```bash
@@ -192,13 +217,42 @@ certmgr.msc
 # 3. Follow wizard to import CA certificate
 ```
 
-**4. Use Self-Signed Certificate (Development)**
+**4. Export Self-Signed Certificate from Server**
 ```bash
 # Export certificate from server
 openssl s_client -connect gcm.example.com:443 -showcerts
 
-# Save certificate and install as above
+# Save the certificate section (between BEGIN and END CERTIFICATE)
+# Then install using one of the methods above
 ```
+
+#### Verification
+
+After installing the CA certificate or disabling SSL verification:
+
+1. **Test Connection** in the Configuration tab
+2. **Initialize Agent** in the Chat tab
+3. **Check Logs** for SSL-related messages:
+   ```bash
+   tail -f logs/auth_*.log logs/mcp_*.log
+   ```
+4. **Verify** no SSL errors appear when executing tools
+
+#### Troubleshooting SSL Issues
+
+**Issue: SSL errors persist after disabling verification**
+- **Solution**: Restart the application to apply the SSL workaround
+- The SSL context is set during MCP client initialization
+
+**Issue: Different SSL settings needed for Keycloak vs GCM**
+- **Solution**: The agent supports independent SSL verification settings
+- Uncheck SSL verification only for the server with self-signed certificates
+- Keep SSL verification enabled for servers with valid certificates
+
+**Issue: Warning about unverified HTTPS requests**
+- **Expected**: This warning appears when SSL verification is disabled
+- **Solution**: This is informational and can be ignored in development/testing
+- For production, install proper CA certificates to eliminate the warning
 
 ---
 
