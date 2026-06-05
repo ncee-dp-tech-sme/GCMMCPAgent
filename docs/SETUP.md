@@ -71,17 +71,21 @@ sudo dnf install python3.10 python3-pip
 
 Before installation, ensure you have:
 
-1. **GCM Server Access**:
+1. **Keycloak Server Access**:
+   - Keycloak server URL and port
+   - Keycloak realm information
+   - Network connectivity to Keycloak server
+
+2. **GCM Server Access**:
    - GCM server URL and hostname
    - Valid user account with appropriate permissions
    - Network connectivity to GCM server
 
-2. **Keycloak Authentication**:
+3. **Authentication Credentials**:
    - OAuth2 client ID and client secret
-   - Keycloak realm information
-   - Network access to Keycloak server
+   - GCM username and password
 
-3. **WatsonX Credentials**:
+4. **WatsonX Credentials**:
    - WatsonX API key
    - WatsonX project ID
    - Active WatsonX subscription

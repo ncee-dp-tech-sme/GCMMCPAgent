@@ -2,12 +2,14 @@
 
 # Made with Bob
 # 2026-06-05 22:14 UTC - Initial implementation of configuration UI with secure credential handling
+# 2026-06-05 21:03 UTC - Split Keycloak and GCM server configuration into separate tabs
 
 from typing import Tuple, Optional
 import gradio as gr
 
 from gcm_agent.config.config_manager import (
     get_config_manager,
+    KeycloakConfig,
     GCMServerConfig,
     AuthConfig,
     WatsonXConfig,
@@ -24,7 +26,7 @@ from gcm_agent.utils.logger import get_ui_logger
 logger = get_ui_logger()
 
 
-def load_configuration() -> Tuple[str, str, int, str, bool, str, str, str, str, str, str, bool, int, int, str]:
+def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str, str, str, str, str, bool, int, int, str]:
     """
     Load existing configuration from secure storage.
     
@@ -37,9 +39,10 @@ def load_configuration() -> Tuple[str, str, int, str, bool, str, str, str, str, 
         # Try to load configuration
         if not config_manager.load_config():
             logger.info("No existing configuration found")
-            return ("", "", 443, "master", True, "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, "No configuration found. Please enter your settings.")
+            return ("", 443, "master", True, "", "", True, "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, "No configuration found. Please enter your settings.")
         
         # Load each section
+        keycloak_config = config_manager.get_keycloak_config()
         gcm_config = config_manager.get_gcm_config()
         auth_config = config_manager.get_auth_config()
         watsonx_config = config_manager.get_watsonx_config()
@@ -53,10 +56,12 @@ def load_configuration() -> Tuple[str, str, int, str, bool, str, str, str, str, 
         logger.info("Configuration loaded successfully")
         
         return (
+            keycloak_config.url,
+            keycloak_config.port,
+            keycloak_config.realm,
+            keycloak_config.verify_ssl,
             gcm_config.url,
             gcm_config.hostname,
-            gcm_config.keycloak_port,
-            gcm_config.realm,
             gcm_config.verify_ssl,
             auth_config.username,
             password,
@@ -73,18 +78,20 @@ def load_configuration() -> Tuple[str, str, int, str, bool, str, str, str, str, 
         
     except (MissingConfigError, InvalidConfigError) as e:
         logger.warning(f"Configuration incomplete or invalid: {e}")
-        return ("", "", 443, "master", True, "", "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"⚠️ Configuration incomplete: {str(e)}")
+        return ("", 443, "master", True, "", "", True, "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"⚠️ Configuration incomplete: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
-        return ("", "", 443, "master", True, "", "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"❌ Error loading configuration: {str(e)}")
+        return ("", 443, "master", True, "", "", True, "", "", "", "", "", "ibm/granite-13b-chat-v2", True, 10, 300, f"❌ Error loading configuration: {str(e)}")
 
 
 def save_configuration(
+    keycloak_url: str,
+    keycloak_port: int,
+    keycloak_realm: str,
+    keycloak_verify_ssl: bool,
     gcm_url: str,
     gcm_hostname: str,
-    keycloak_port: int,
-    realm: str,
-    verify_ssl: bool,
+    gcm_verify_ssl: bool,
     username: str,
     password: str,
     client_id: str,
@@ -109,16 +116,21 @@ def save_configuration(
         config_manager = get_config_manager()
         
         # Validate required fields
-        if not all([gcm_url, gcm_hostname, username, password, client_id, client_secret, project_id, api_key]):
+        if not all([keycloak_url, gcm_url, gcm_hostname, username, password, client_id, client_secret, project_id, api_key]):
             return "❌ Error: All fields are required"
         
         # Create configuration objects (will validate)
+        keycloak_config = KeycloakConfig(
+            url=keycloak_url,
+            port=keycloak_port,
+            realm=keycloak_realm,
+            verify_ssl=keycloak_verify_ssl,
+        )
+        
         gcm_config = GCMServerConfig(
             url=gcm_url,
             hostname=gcm_hostname,
-            keycloak_port=keycloak_port,
-            realm=realm,
-            verify_ssl=verify_ssl,
+            verify_ssl=gcm_verify_ssl,
         )
         
         auth_config = AuthConfig(
@@ -138,6 +150,7 @@ def save_configuration(
         )
         
         # Save configurations
+        config_manager.update_keycloak_config(keycloak_config)
         config_manager.update_gcm_config(gcm_config)
         config_manager.update_auth_config(auth_config, password, client_secret)
         config_manager.update_watsonx_config(watsonx_config, api_key)
@@ -158,44 +171,40 @@ def save_configuration(
 
 
 async def test_connection(
-    gcm_url: str,
-    gcm_hostname: str,
+    keycloak_url: str,
     keycloak_port: int,
-    realm: str,
-    verify_ssl: bool,
+    keycloak_realm: str,
+    keycloak_verify_ssl: bool,
     username: str,
     password: str,
     client_id: str,
     client_secret: str,
 ) -> str:
     """
-    Test connection to GCM server with provided credentials.
+    Test connection to Keycloak server with provided credentials.
     
     Args:
-        GCM server and authentication parameters
+        Keycloak server and authentication parameters
         
     Returns:
         Status message
     """
     try:
         # Validate required fields
-        if not all([gcm_url, gcm_hostname, username, password, client_id, client_secret]):
+        if not all([keycloak_url, username, password, client_id, client_secret]):
             return "❌ Error: All connection fields are required"
         
-        logger.info("Testing connection to GCM server")
+        logger.info("Testing connection to Keycloak server")
         
         # Create auth instance and test connection
-        # Build Keycloak URL from GCM URL and port
-        keycloak_url = f"{gcm_url.rstrip('/')}:{keycloak_port}"
-        
         auth = KeycloakAuthenticator(
             keycloak_url=keycloak_url,
-            realm=realm,
+            realm=keycloak_realm,
             client_id=client_id,
             username=username,
             password=password,
             client_secret=client_secret,
-            verify_ssl=verify_ssl,
+            verify_ssl=keycloak_verify_ssl,
         )
         
         # Attempt to get token
@@ -203,7 +212,7 @@ async def test_connection(
         
         if token:
             logger.info("Connection test successful")
-            return "✅ Connection successful! Credentials are valid."
+            return "✅ Connection successful! Keycloak credentials are valid."
         else:
             logger.warning("Connection test failed: No token received")
             return "❌ Connection failed: Unable to obtain authentication token"
@@ -246,33 +255,46 @@ def create_config_ui() -> gr.Blocks:
         gr.Markdown("# 🔧 GCM Agent Configuration")
         gr.Markdown("Configure your GCM Agent connection, authentication, and settings.")
         
+        with gr.Tab("🔑 Keycloak Server"):
+            gr.Markdown("### Keycloak Authentication Server")
+            keycloak_url = gr.Textbox(
+                label="Keycloak URL",
+                placeholder="https://keycloak.example.com",
+                info="Keycloak authentication server URL"
+            )
+            keycloak_port = gr.Number(
+                label="Keycloak Port",
+                value=443,
+                precision=0,
+                info="Keycloak server port (default: 443)"
+            )
+            keycloak_realm = gr.Textbox(
+                label="Realm",
+                value="master",
+                info="Keycloak realm name (default: master)"
+            )
+            keycloak_verify_ssl = gr.Checkbox(
+                label="Verify SSL",
+                value=True,
+                info="Verify SSL certificates for Keycloak (recommended)"
+            )
+        
         with gr.Tab("🖥️ GCM Server"):
-            gr.Markdown("### Server Connection Settings")
+            gr.Markdown("### GCM MCP Server Connection")
             gcm_url = gr.Textbox(
                 label="GCM URL",
                 placeholder="https://gcm.example.com",
-                info="Full URL to your GCM server"
+                info="GCM MCP server URL (used for both MCP and authorization)"
             )
             gcm_hostname = gr.Textbox(
                 label="Hostname",
                 placeholder="gcm-server",
                 info="GCM server hostname"
             )
-            keycloak_port = gr.Number(
-                label="Keycloak Port",
-                value=443,
-                precision=0,
-                info="Port for Keycloak authentication (default: 443)"
-            )
-            realm = gr.Textbox(
-                label="Realm",
-                value="master",
-                info="Keycloak realm (default: master)"
-            )
-            verify_ssl = gr.Checkbox(
-                label="Verify SSL Certificates",
+            gcm_verify_ssl = gr.Checkbox(
+                label="Verify SSL",
                 value=True,
-                info="Enable SSL certificate verification (recommended)"
+                info="Verify SSL certificates for GCM (recommended)"
             )
         
         with gr.Tab("🔐 Authentication"):
@@ -368,7 +390,8 @@ def create_config_ui() -> gr.Blocks:
         save_btn.click(
             fn=save_configuration,
             inputs=[
-                gcm_url, gcm_hostname, keycloak_port, realm, verify_ssl,
+                keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
+                gcm_url, gcm_hostname, gcm_verify_ssl,
                 username, password, client_id, client_secret,
                 project_id, api_key, model,
                 discovery_mode, max_iterations, timeout
@@ -379,7 +402,7 @@ def create_config_ui() -> gr.Blocks:
         test_btn.click(
             fn=test_connection,
             inputs=[
-                gcm_url, gcm_hostname, keycloak_port, realm, verify_ssl,
+                keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
                 username, password, client_id, client_secret
             ],
             outputs=status
@@ -388,7 +411,8 @@ def create_config_ui() -> gr.Blocks:
         load_btn.click(
             fn=load_configuration,
             outputs=[
-                gcm_url, gcm_hostname, keycloak_port, realm, verify_ssl,
+                keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
+                gcm_url, gcm_hostname, gcm_verify_ssl,
                 username, password, client_id, client_secret,
                 project_id, api_key, model,
                 discovery_mode, max_iterations, timeout,

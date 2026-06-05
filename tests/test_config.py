@@ -212,12 +212,14 @@ class TestConfigManager:
     def test_config_models_exist(self):
         """Test that configuration models exist."""
         from gcm_agent.config.config_manager import (
+            KeycloakConfig,
             GCMServerConfig,
             AuthConfig,
             WatsonXConfig,
             AgentConfig
         )
         
+        assert KeycloakConfig is not None
         assert GCMServerConfig is not None
         assert AuthConfig is not None
         assert WatsonXConfig is not None

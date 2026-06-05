@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-05 19:53 UTC - Initial implementation of configuration manager with Pydantic models
+# 2026-06-05 21:02 UTC - Separated Keycloak configuration and added independent SSL verification
 
 import json
 import threading
@@ -29,14 +30,32 @@ class InvalidConfigError(ConfigurationError):
 
 
 # Pydantic configuration models
+class KeycloakConfig(BaseModel):
+    """Configuration for Keycloak authentication server."""
+    
+    url: str = Field(..., description="Keycloak server URL (e.g., https://keycloak.example.com)")
+    port: int = Field(default=443, ge=1, le=65535, description="Keycloak server port")
+    realm: str = Field(default="master", description="Keycloak realm name")
+    verify_ssl: bool = Field(default=True, description="Verify SSL certificates for Keycloak")
+
+    @validator("url")
+    def validate_url(cls, v):
+        """Validate URL format."""
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("URL must start with http:// or https://")
+        return v.rstrip("/")
+
+    class Config:
+        """Pydantic model configuration."""
+        validate_assignment = True
+
+
 class GCMServerConfig(BaseModel):
-    """Configuration for GCM server connection."""
+    """Configuration for GCM MCP server."""
     
     url: str = Field(..., description="GCM server URL (e.g., https://gcm.example.com)")
     hostname: str = Field(..., description="GCM server hostname")
-    keycloak_port: int = Field(default=443, ge=1, le=65535, description="Keycloak port")
-    realm: str = Field(default="master", description="Keycloak realm")
-    verify_ssl: bool = Field(default=True, description="Verify SSL certificates")
+    verify_ssl: bool = Field(default=True, description="Verify SSL certificates for GCM")
 
     @validator("url")
     def validate_url(cls, v):
@@ -214,12 +233,35 @@ class ConfigManager:
             StorageError: If save operation fails
         """
         # Validate configuration structure
-        required_sections = ["gcm_server", "auth", "watsonx", "agent"]
+        required_sections = ["keycloak", "gcm_server", "auth", "watsonx", "agent"]
         for section in required_sections:
             if section not in config:
                 raise InvalidConfigError(f"Missing required section: {section}")
 
         self._save_config_to_storage(config)
+
+    def get_keycloak_config(self) -> KeycloakConfig:
+        """
+        Get Keycloak server configuration.
+
+        Returns:
+            KeycloakConfig instance
+
+        Raises:
+            MissingConfigError: If configuration is not found
+            InvalidConfigError: If configuration is invalid
+        """
+        if self._config_cache is None:
+            self.load_config()
+
+        if self._config_cache is None or "keycloak" not in self._config_cache:
+            raise MissingConfigError("Keycloak configuration not found")
+
+        try:
+            return KeycloakConfig(**self._config_cache["keycloak"])
+        except ValidationError as e:
+            self.logger.error(f"Invalid Keycloak configuration: {e}")
+            raise InvalidConfigError(f"Invalid Keycloak configuration: {e}") from e
 
     def get_gcm_config(self) -> GCMServerConfig:
         """
@@ -334,6 +376,26 @@ class ConfigManager:
         self._config_cache["gcm_server"] = config.dict()
         self._save_config_to_storage(self._config_cache)
         self.logger.info("Updated GCM server configuration")
+
+    def update_keycloak_config(self, config: KeycloakConfig) -> None:
+        """
+        Update Keycloak server configuration.
+
+        Args:
+            config: KeycloakConfig instance
+
+        Raises:
+            StorageError: If save operation fails
+        """
+        if self._config_cache is None:
+            self.load_config()
+
+        if self._config_cache is None:
+            self._config_cache = {}
+
+        self._config_cache["keycloak"] = config.dict()
+        self._save_config_to_storage(self._config_cache)
+        self.logger.info("Updated Keycloak configuration")
 
     def update_auth_config(self, config: AuthConfig, password: str, client_secret: str) -> None:
         """
@@ -455,6 +517,7 @@ class ConfigManager:
         """
         try:
             # Check non-sensitive config
+            self.get_keycloak_config()
             self.get_gcm_config()
             self.get_auth_config()
             self.get_watsonx_config()
@@ -504,6 +567,7 @@ class ConfigManager:
             raise MissingConfigError("Configuration is incomplete")
 
         return {
+            "keycloak": self.get_keycloak_config().dict(),
             "gcm_server": self.get_gcm_config().dict(),
             "auth": {
                 **self.get_auth_config().dict(),

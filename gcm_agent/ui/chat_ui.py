@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-05 22:15 UTC - Initial implementation of chat UI with streaming support
+# 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
 
 from typing import List, Tuple, Optional, AsyncGenerator
 import json
@@ -86,6 +87,7 @@ async def initialize_agent() -> str:
             return f"❌ {error_msg}"
         
         # Get all configuration
+        keycloak_config = config_manager.get_keycloak_config()
         gcm_config = config_manager.get_gcm_config()
         auth_config = config_manager.get_auth_config()
         watsonx_config = config_manager.get_watsonx_config()
@@ -102,28 +104,18 @@ async def initialize_agent() -> str:
             _agent_state.error_message = error_msg
             return f"❌ {error_msg}"
         
-        # Create MCP client
-        logger.debug("Creating MCP client")
-        _agent_state.mcp_client = GCMMCPClient(
-            gcm_url=gcm_config.url,
-            gcm_hostname=gcm_config.hostname,
-            keycloak_port=gcm_config.keycloak_port,
-            realm=gcm_config.realm,
-            username=auth_config.username,
+        # Create MCP client and tool loader using the helper function
+        logger.debug("Creating MCP client and tool loader")
+        from gcm_agent.mcp import create_gcm_mcp_client
+        
+        _agent_state.mcp_client, _agent_state.tool_loader = await create_gcm_mcp_client(
+            keycloak_config=keycloak_config,
+            gcm_config=gcm_config,
+            auth_config=auth_config,
+            agent_config=agent_config,
             password=password,
-            client_id=auth_config.client_id,
             client_secret=client_secret,
-            verify_ssl=gcm_config.verify_ssl,
-            discovery_mode=agent_config.discovery_mode,
         )
-        
-        # Connect to MCP server
-        logger.debug("Connecting to MCP server")
-        await _agent_state.mcp_client.connect()
-        
-        # Create tool loader
-        logger.debug("Creating tool loader")
-        _agent_state.tool_loader = GCMToolLoader(_agent_state.mcp_client)
         
         # Create agent
         logger.debug("Creating GCM Agent")

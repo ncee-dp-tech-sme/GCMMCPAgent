@@ -2,11 +2,12 @@
 
 # Made with Bob
 # 2026-06-05 21:59 UTC - Implemented custom exceptions, authenticate_gcm helper, and exports
+# 2026-06-05 21:04 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
 
 from typing import Tuple, Optional
 import httpx
 
-from gcm_agent.config.config_manager import GCMServerConfig, AuthConfig
+from gcm_agent.config.config_manager import KeycloakConfig, GCMServerConfig, AuthConfig
 from gcm_agent.auth.keycloak_auth import KeycloakAuthenticator, KeycloakAuthError
 from gcm_agent.auth.gcm_auth import GCMAuthenticator, GCMAuthError
 from gcm_agent.utils.logger import get_auth_logger
@@ -29,6 +30,7 @@ class InvalidCredentialsError(AuthenticationError):
 
 
 async def authenticate_gcm(
+    keycloak_config: KeycloakConfig,
     gcm_config: GCMServerConfig,
     auth_config: AuthConfig,
     password: str,
@@ -45,6 +47,7 @@ async def authenticate_gcm(
     Both steps are required - missing either causes silent auth failure.
     
     Args:
+        keycloak_config: Keycloak server configuration
         gcm_config: GCM server configuration
         auth_config: Authentication configuration (username, client_id)
         password: GCM user password
@@ -62,7 +65,7 @@ async def authenticate_gcm(
     
     Example:
         >>> token, client = await authenticate_gcm(
-        ...     gcm_config, auth_config, password, client_secret
+        ...     keycloak_config, gcm_config, auth_config, password, client_secret
         ... )
         >>> # Use client for MCP operations
         >>> # Token can be used for manual requests or token refresh
@@ -73,16 +76,16 @@ async def authenticate_gcm(
     try:
         # Step 1: Get Keycloak OAuth2 token
         logger.info("Step 1: Authenticating with Keycloak")
-        keycloak_url = f"{gcm_config.url}:{gcm_config.keycloak_port}"
+        keycloak_url = f"{keycloak_config.url}:{keycloak_config.port}"
         
         keycloak = KeycloakAuthenticator(
             keycloak_url=keycloak_url,
-            realm=gcm_config.realm,
+            realm=keycloak_config.realm,
             client_id=auth_config.client_id,
             username=auth_config.username,
             password=password,
             client_secret=client_secret,
-            verify_ssl=gcm_config.verify_ssl,
+            verify_ssl=keycloak_config.verify_ssl,
         )
         
         access_token = await keycloak.get_token()
@@ -120,6 +123,7 @@ async def authenticate_gcm(
 
 
 async def get_client_factory(
+    keycloak_config: KeycloakConfig,
     gcm_config: GCMServerConfig,
     auth_config: AuthConfig,
     password: str,
@@ -136,6 +140,7 @@ async def get_client_factory(
     handles the 'verify' parameter conflict and injects Bearer tokens.
     
     Args:
+        keycloak_config: Keycloak server configuration
         gcm_config: GCM server configuration
         auth_config: Authentication configuration
         password: GCM user password
@@ -152,7 +157,7 @@ async def get_client_factory(
     
     Example:
         >>> factory = await get_client_factory(
-        ...     gcm_config, auth_config, password, client_secret
+        ...     keycloak_config, gcm_config, auth_config, password, client_secret
         ... )
         >>> # Pass factory to MCP client
         >>> mcp_client = MCPClient(client_factory=factory)
@@ -162,7 +167,7 @@ async def get_client_factory(
     
     # Complete authentication flow
     access_token, _ = await authenticate_gcm(
-        gcm_config, auth_config, password, client_secret
+        keycloak_config, gcm_config, auth_config, password, client_secret
     )
     
     # Create GCM authenticator to get factory

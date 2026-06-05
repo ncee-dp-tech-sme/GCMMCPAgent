@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-05 21:58 UTC - Initial implementation of KeycloakAuthenticator with OAuth2 token management
+# 2026-06-05 21:04 UTC - Updated to use separate Keycloak URL configuration
 
 import base64
 import json
@@ -34,13 +35,13 @@ class KeycloakAuthenticator:
         Initialize Keycloak authenticator.
 
         Args:
-            keycloak_url: Base URL of Keycloak server (e.g., https://keycloak.example.com)
+            keycloak_url: Full Keycloak server URL including port (e.g., https://keycloak.example.com:443)
             realm: Keycloak realm name (default: "master")
             client_id: OAuth2 client ID
             username: User username for authentication
             password: User password for authentication
             client_secret: OAuth2 client secret
-            verify_ssl: Whether to verify SSL certificates (default: True)
+            verify_ssl: Whether to verify SSL certificates for Keycloak (default: True)
         """
         self.keycloak_url = keycloak_url.rstrip("/")
         self.realm = realm

@@ -85,19 +85,30 @@ The Configuration interface is available in the **⚙️ Configuration** tab whe
 
 ### Configuration Sections
 
+#### 🔑 Keycloak Server Settings
+
+Configure your connection to the Keycloak authentication server:
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| **Keycloak URL** | Full URL to your Keycloak server | `https://keycloak.example.com` |
+| **Keycloak Port** | Port for Keycloak server | `443` (default) |
+| **Realm** | Keycloak realm name | `master` (default) |
+| **Verify SSL** | Enable SSL certificate verification for Keycloak | ✅ Enabled (recommended) |
+
+> **Note:** The Keycloak URL is used for OAuth2 token authentication.
+
 #### 🖥️ GCM Server Settings
 
-Configure your connection to the GCM server:
+Configure your connection to the GCM MCP server:
 
 | Field | Description | Example |
 |-------|-------------|---------|
 | **GCM URL** | Full URL to your GCM server | `https://gcm.example.com` |
 | **Hostname** | GCM server hostname | `gcm-server` |
-| **Keycloak Port** | Port for Keycloak authentication | `443` (default) |
-| **Realm** | Keycloak realm name | `master` (default) |
-| **Verify SSL** | Enable SSL certificate verification | ✅ Enabled (recommended) |
+| **Verify SSL** | Enable SSL certificate verification for GCM | ✅ Enabled (recommended) |
 
-> **Note:** The GCM URL should not include the `/ibm/mcp/mcp` path - this is added automatically.
+> **Note:** The GCM URL is used for both MCP operations and user management authorization. The `/ibm/mcp/mcp` path is added automatically.
 
 #### 🔐 Authentication Settings
 

@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-05 22:00 UTC - Initial implementation of MCP exceptions and helper functions
+# 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
 
 from typing import Tuple
 
@@ -36,6 +37,7 @@ class ToolNotFoundError(MCPError):
 
 
 async def create_gcm_mcp_client(
+    keycloak_config,
     gcm_config,
     auth_config,
     agent_config,
@@ -50,6 +52,7 @@ async def create_gcm_mcp_client(
     authentication flow and returns a ready-to-use client and tool loader.
     
     Args:
+        keycloak_config: Keycloak server configuration (KeycloakConfig)
         gcm_config: GCM server configuration (GCMServerConfig)
         auth_config: Authentication configuration (AuthConfig)
         agent_config: Agent configuration (AgentConfig)
@@ -67,6 +70,7 @@ async def create_gcm_mcp_client(
     Example:
         >>> from gcm_agent.config import get_config_manager
         >>> config_mgr = get_config_manager()
+        >>> keycloak_config = config_mgr.get_keycloak_config()
         >>> gcm_config = config_mgr.get_gcm_config()
         >>> auth_config = config_mgr.get_auth_config()
         >>> agent_config = config_mgr.get_agent_config()
@@ -74,7 +78,7 @@ async def create_gcm_mcp_client(
         >>> client_secret = config_mgr.get_client_secret()
         >>>
         >>> mcp_client, tool_loader = await create_gcm_mcp_client(
-        ...     gcm_config, auth_config, agent_config, password, client_secret
+        ...     keycloak_config, gcm_config, auth_config, agent_config, password, client_secret
         ... )
         >>> tools = await tool_loader.load_tools()
     """
@@ -89,7 +93,7 @@ async def create_gcm_mcp_client(
         # get_client_factory handles the complete two-step auth flow internally
         logger.debug("Step 1-2: Authenticating and creating client factory")
         client_factory = await get_client_factory(
-            gcm_config, auth_config, password, client_secret, timeout=agent_config.timeout
+            keycloak_config, gcm_config, auth_config, password, client_secret, timeout=agent_config.timeout
         )
         
         # Step 3: Create MCP client

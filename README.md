@@ -92,10 +92,11 @@ The application will start on `http://localhost:7860`
 1. **Open your browser** to `http://localhost:7860`
 2. **Navigate to the ⚙️ Configuration tab**
 3. **Enter your settings**:
-   - GCM server connection details
-   - Authentication credentials (stored securely)
-   - WatsonX configuration
-   - Agent behavior settings
+   - **Keycloak Server**: Authentication server URL, port, realm, and SSL verification
+   - **GCM Server**: GCM MCP server URL, hostname, and SSL verification
+   - **Authentication**: Username, password, client ID, and client secret (stored securely)
+   - **WatsonX**: API key, project ID, and model selection
+   - **Agent Settings**: Discovery mode, max iterations, and timeout
 4. **Click 💾 Save Configuration**
 5. **Test your connection** with 🔌 Test Connection
 6. **Switch to the 💬 Chat tab**
