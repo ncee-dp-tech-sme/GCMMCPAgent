@@ -1,6 +1,7 @@
 """Main LangGraph agent module for coordinating prompts, tools, and GCM-specific workflows."""
 
 # Made with Bob
+# 2026-06-05 22:13 UTC - Added tool limiting to respect WatsonX 128 tool limit
 # 2026-06-05 22:11 UTC - Initial implementation of LangGraph agent following AGENTS.md patterns
 # 2026-06-05 21:51 UTC - Added WatsonX URL parameter to LLM initialization
 # 2026-06-05 22:05 UTC - Fixed to use ChatWatsonx instead of WatsonxLLM for tool binding support
@@ -110,8 +111,11 @@ class GCMAgent:
         """
         Load tools from MCP server via tool loader.
         
+        WatsonX has a hard limit of 128 tools. If more tools are loaded,
+        we limit to the first 128 tools and log a warning.
+        
         Returns:
-            List of available tools
+            List of available tools (max 128 for WatsonX compatibility)
             
         Raises:
             AgentInitializationError: If tool loading fails
@@ -120,6 +124,18 @@ class GCMAgent:
             self.logger.debug("Loading tools from MCP server")
             tools = await self.tool_loader.load_tools()
             self.logger.info(f"Loaded {len(tools)} tools from MCP server")
+            
+            # WatsonX has a hard limit of 128 tools
+            MAX_TOOLS = 128
+            if len(tools) > MAX_TOOLS:
+                self.logger.warning(
+                    f"Loaded {len(tools)} tools, but WatsonX supports max {MAX_TOOLS}. "
+                    f"Limiting to first {MAX_TOOLS} tools. "
+                    f"Consider enabling discovery_mode=true for dynamic tool loading."
+                )
+                tools = tools[:MAX_TOOLS]
+                self.logger.info(f"Using {len(tools)} tools after limiting")
+            
             return tools
         except Exception as e:
             self.logger.error(f"Failed to load tools: {e}")
