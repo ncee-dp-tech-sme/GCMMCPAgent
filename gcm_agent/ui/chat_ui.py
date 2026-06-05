@@ -1,10 +1,11 @@
 """Chat interface module for interacting with the GCM LangChain agent through a local UI."""
 
 # Made with Bob
+# 2026-06-05 22:08 UTC - Fixed Gradio message format to use dict format with 'role' and 'content' keys (Gradio 6.0+)
 # 2026-06-05 22:15 UTC - Initial implementation of chat UI with streaming support
 # 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
 
-from typing import List, Tuple, Optional, AsyncGenerator
+from typing import List, Tuple, Optional, AsyncGenerator, Dict
 import json
 from datetime import datetime
 import gradio as gr
@@ -157,13 +158,13 @@ async def initialize_agent() -> str:
         return f"❌ {error_msg}"
 
 
-async def chat_response(message: str, history: List[Tuple[str, str]]) -> AsyncGenerator[Tuple[List[Tuple[str, str]], str], None]:
+async def chat_response(message: str, history: List[dict]) -> AsyncGenerator[Tuple[List[dict], str], None]:
     """
     Process chat message and stream response.
     
     Args:
         message: User's message
-        history: Chat history as list of (user, assistant) tuples
+        history: Chat history as list of message dictionaries with 'role' and 'content' keys
         
     Yields:
         Updated history and empty message box
@@ -176,7 +177,8 @@ async def chat_response(message: str, history: List[Tuple[str, str]]) -> AsyncGe
     
     if not _agent_state.is_ready():
         error_response = "⚠️ Agent not initialized. Please initialize the agent first."
-        history.append((message, error_response))
+        history.append({"role": "user", "content": message})
+        history.append({"role": "assistant", "content": error_response})
         yield history, ""
         return
     
@@ -184,14 +186,16 @@ async def chat_response(message: str, history: List[Tuple[str, str]]) -> AsyncGe
         logger.debug(f"Processing message: {message[:100]}...")
         
         # Add user message to history immediately
-        history.append((message, ""))
+        history.append({"role": "user", "content": message})
+        # Add placeholder for assistant response
+        history.append({"role": "assistant", "content": ""})
         
         # Stream response
         response = ""
         async for chunk in _agent_state.agent.stream_chat(message):
             response = chunk
             # Update the last message in history with accumulated response
-            history[-1] = (message, response)
+            history[-1] = {"role": "assistant", "content": response}
             yield history, ""
         
         logger.debug(f"Response complete: {len(response)} characters")
@@ -199,21 +203,21 @@ async def chat_response(message: str, history: List[Tuple[str, str]]) -> AsyncGe
     except AgentExecutionError as e:
         error_msg = f"❌ Agent error: {str(e)}"
         logger.error(error_msg)
-        history[-1] = (message, error_msg)
+        history[-1] = {"role": "assistant", "content": error_msg}
         yield history, ""
     except Exception as e:
         error_msg = f"❌ Unexpected error: {str(e)}"
         logger.error(error_msg)
-        history[-1] = (message, error_msg)
+        history[-1] = {"role": "assistant", "content": error_msg}
         yield history, ""
 
 
-def clear_history() -> Tuple[List, str]:
+def clear_history() -> Tuple[List[dict], str]:
     """
     Clear conversation history.
     
     Returns:
-        Empty history and status message
+        Empty history (list of message dicts) and status message
     """
     global _agent_state
     
@@ -297,6 +301,7 @@ def create_chat_ui() -> gr.Blocks:
             height=500,
             show_label=True,
             avatar_images=(None, "🤖"),
+            type="messages",  # Explicitly use messages format (Gradio 6.0+)
         )
         
         with gr.Row():
