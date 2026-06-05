@@ -179,3 +179,9 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+.DS_Store
+.vscode/settings.json
+docs/devsecops-security-mode-README.md
+docs/jenkins-scan-file.example
+DevSecOps_Security_Blueprint_Banking.txt
+docs/QuickStartGuide-IBMDocumentation.md
