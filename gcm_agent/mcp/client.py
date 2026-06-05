@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-05 22:48 UTC - Added environment variable SSL workaround
 # 2026-06-05 22:43 UTC - Added SSL verification workaround for self-signed certificates
 # 2026-06-05 22:01 UTC - Initial implementation of GCMMCPClient with streamable_http transport
 # 2026-06-05 21:47 UTC - Fixed MCP endpoint URL to /ibm/mcp/mcp and removed deprecated context manager usage
@@ -10,6 +11,7 @@ from typing import Callable, Optional, List, Dict, Any
 import asyncio
 import ssl
 import warnings
+import os
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
@@ -316,7 +318,7 @@ class GCMMCPClient:
         
         This is a workaround for cases where the MCP library creates HTTP clients
         that don't use our client factory. It modifies the default SSL context
-        to disable certificate verification.
+        to disable certificate verification and sets environment variables.
         
         WARNING: This affects all SSL connections in the process. Only use when
         verify_ssl=False is explicitly set.
@@ -327,14 +329,30 @@ class GCMMCPClient:
                 "This will disable SSL verification for all HTTPS connections in this process."
             )
             
-            # Create unverified SSL context
+            # Method 1: Modify default SSL context
             ssl._create_default_https_context = ssl._create_unverified_context
+            self.logger.debug("Set ssl._create_default_https_context to unverified")
             
-            # Suppress SSL warnings
+            # Method 2: Set environment variables that httpx and other libraries respect
+            os.environ['PYTHONHTTPSVERIFY'] = '0'
+            os.environ['CURL_CA_BUNDLE'] = ''
+            os.environ['REQUESTS_CA_BUNDLE'] = ''
+            self.logger.debug("Set SSL-related environment variables to disable verification")
+            
+            # Method 3: Suppress SSL warnings
             warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+            warnings.filterwarnings('ignore', message='InsecureRequestWarning')
+            
+            # Try to disable urllib3 warnings if available
+            try:
+                import urllib3
+                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+                self.logger.debug("Disabled urllib3 SSL warnings")
+            except ImportError:
+                pass
             
             self._ssl_context_applied = True
-            self.logger.debug("SSL verification workaround applied successfully")
+            self.logger.info("SSL verification workaround applied successfully (all methods)")
             
         except Exception as e:
             self.logger.error(f"Failed to apply SSL workaround: {e}")

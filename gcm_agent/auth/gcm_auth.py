@@ -174,6 +174,9 @@ class GCMAuthenticator:
             We explicitly set verify=False and also handle any SSL context that might
             be passed in kwargs to ensure SSL verification is truly disabled.
             """
+            # Log all incoming kwargs for debugging
+            logger.debug(f"Factory called with kwargs: {kwargs}")
+            
             # Remove parameters that we're setting explicitly to avoid conflicts
             kwargs.pop("verify", None)
             kwargs.pop("timeout", None)
@@ -181,6 +184,11 @@ class GCMAuthenticator:
             # Also remove any SSL context that might override our verify setting
             kwargs.pop("cert", None)
             kwargs.pop("trust_env", None)
+            
+            # Remove auth parameter if present - we handle auth via headers
+            auth_param = kwargs.pop("auth", None)
+            if auth_param:
+                logger.debug(f"Removed auth parameter from kwargs: {type(auth_param)}")
             
             # Get existing headers from kwargs if any
             existing_headers = kwargs.pop("headers", {})
@@ -192,17 +200,20 @@ class GCMAuthenticator:
                 "Content-Type": "application/json",
             }
 
-            logger.debug(f"Creating AsyncClient with verify_ssl={verify_ssl}, kwargs={list(kwargs.keys())}")
+            logger.debug(f"Creating AsyncClient with verify_ssl={verify_ssl}, remaining kwargs={list(kwargs.keys())}")
             
             # Create client with explicit SSL verification setting
+            # Use httpx.Limits to prevent connection pooling issues
             client = httpx.AsyncClient(
                 headers=merged_headers,
                 verify=verify_ssl,
                 timeout=timeout,
                 trust_env=False,  # Don't use environment SSL settings
+                follow_redirects=True,  # Follow redirects
                 **kwargs,
             )
             
+            logger.debug(f"AsyncClient created successfully with verify={client._verify}")
             return client
 
         self.logger.debug(f"Created authenticated client factory (verify_ssl={verify_ssl})")
