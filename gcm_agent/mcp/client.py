@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-06 00:55 UTC - Implemented module-level SSL bypass before MCP imports to fix SSL verification errors
 # 2026-06-06 00:28 UTC - Added token refresh mechanism and reconnection support to fix intermittent SSL/500 errors
 # 2026-06-05 23:51 UTC - Enhanced SSL workaround to patch both AsyncClient and sync Client, auto-extract hostname from URL
 # 2026-06-05 23:44 UTC - Added x-gcm-hostname header to fix 500 errors on asset inventory API calls
@@ -16,10 +17,52 @@ import ssl
 import warnings
 import os
 
+# ============================================================================
+# SSL BYPASS - MUST BE APPLIED BEFORE MCP IMPORTS
+# ============================================================================
+# This section patches httpx.AsyncClient at module level to ensure ALL httpx
+# clients created by the MCP library have SSL verification disabled when needed.
+# The MCP library creates multiple clients during initialization, outside our
+# control, so we must patch httpx BEFORE importing MCP libraries.
+# ============================================================================
+
+import httpx
+
+# Global flag to control SSL bypass (set by GCMMCPClient.__init__)
+_SSL_BYPASS_ENABLED = False
+
+# Store original httpx.AsyncClient.__init__ before any modifications
+_ORIGINAL_HTTPX_ASYNC_INIT = httpx.AsyncClient.__init__
+
+
+def _patched_httpx_async_init(self, *args, **kwargs):
+    """
+    Patched httpx.AsyncClient.__init__ that forces verify=False when SSL bypass is enabled.
+    
+    This ensures all httpx clients created by MCP library have SSL verification disabled
+    when working with self-signed certificates.
+    """
+    global _SSL_BYPASS_ENABLED
+    
+    if _SSL_BYPASS_ENABLED:
+        # Force verify=False for all httpx clients when SSL bypass is enabled
+        kwargs['verify'] = False
+    
+    return _ORIGINAL_HTTPX_ASYNC_INIT(self, *args, **kwargs)
+
+
+# Apply the patch BEFORE importing MCP libraries
+httpx.AsyncClient.__init__ = _patched_httpx_async_init
+
+# NOW import MCP libraries - they will use our patched httpx
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
 
 from gcm_agent.utils.logger import get_mcp_logger
+
+# Get logger for SSL bypass logging
+_ssl_logger = get_mcp_logger()
+_ssl_logger.debug("Applied module-level SSL bypass patch to httpx.AsyncClient")
 
 
 class GCMMCPClient:
@@ -87,12 +130,19 @@ class GCMMCPClient:
         self.verify_ssl = verify_ssl
         self.gcm_authenticator = gcm_authenticator
         
+        # Enable module-level SSL bypass if SSL verification is disabled
+        global _SSL_BYPASS_ENABLED
+        if not verify_ssl:
+            _SSL_BYPASS_ENABLED = True
+            self.logger.warning(
+                "SSL verification disabled - module-level bypass enabled for all httpx clients"
+            )
+        
         # Connection state
         self._connected = False
         self._mcp_client: Optional[MultiServerMCPClient] = None
         self._tools_cache: Optional[List[Tool]] = None
         self._server_info: Optional[Dict[str, Any]] = None
-        self._ssl_context_applied = False
         
         self.logger.debug(
             f"GCMMCPClient initialized for {gcm_url} (hostname={gcm_hostname}) "
@@ -141,8 +191,8 @@ class GCMMCPClient:
         proper authentication headers. The x-mcp-enable-discovery header
         controls which tools are exposed by the server.
         
-        For self-signed certificates, applies SSL context workaround to
-        disable certificate verification at the SSL module level.
+        SSL verification is controlled by the module-level patch applied
+        during initialization when verify_ssl=False.
         
         Raises:
             MCPConnectionError: If connection fails
@@ -155,10 +205,6 @@ class GCMMCPClient:
         
         # Check and refresh token before connecting
         await self._check_and_refresh_token()
-        
-        # Apply SSL workaround if SSL verification is disabled
-        if not self.verify_ssl and not self._ssl_context_applied:
-            self._apply_ssl_workaround()
         
         try:
             # Create MCP client with streamable_http transport
@@ -379,97 +425,6 @@ class GCMMCPClient:
         except Exception as e:
             self.logger.warning(f"Failed to fetch server info: {e}")
             self._server_info = {}
-    
-    def _apply_ssl_workaround(self) -> None:
-        """
-        Apply SSL verification workaround for self-signed certificates.
-        
-        This is a workaround for cases where the MCP library creates HTTP clients
-        that don't use our client factory. It modifies the default SSL context
-        to disable certificate verification and sets environment variables.
-        
-        WARNING: This affects all SSL connections in the process. Only use when
-        verify_ssl=False is explicitly set.
-        """
-        try:
-            self.logger.warning(
-                "Applying SSL verification workaround for self-signed certificates. "
-                "This will disable SSL verification for all HTTPS connections in this process."
-            )
-            
-            # Method 1: Modify default SSL context
-            ssl._create_default_https_context = ssl._create_unverified_context
-            self.logger.debug("Set ssl._create_default_https_context to unverified")
-            
-            # Method 2: Set environment variables that httpx and other libraries respect
-            os.environ['PYTHONHTTPSVERIFY'] = '0'
-            os.environ['CURL_CA_BUNDLE'] = ''
-            os.environ['REQUESTS_CA_BUNDLE'] = ''
-            os.environ['SSL_CERT_FILE'] = ''
-            self.logger.debug("Set SSL-related environment variables to disable verification")
-            
-            # Method 3: Monkey-patch httpx.AsyncClient and Client to force verify=False
-            try:
-                import httpx
-                
-                # Patch AsyncClient
-                original_async_init = httpx.AsyncClient.__init__
-                def patched_async_init(self, *args, **kwargs):
-                    # Force verify=False for all AsyncClient instances
-                    kwargs['verify'] = False
-                    return original_async_init(self, *args, **kwargs)
-                httpx.AsyncClient.__init__ = patched_async_init
-                
-                # Also patch sync Client (in case MCP uses it)
-                original_sync_init = httpx.Client.__init__
-                def patched_sync_init(self, *args, **kwargs):
-                    # Force verify=False for all Client instances
-                    kwargs['verify'] = False
-                    return original_sync_init(self, *args, **kwargs)
-                httpx.Client.__init__ = patched_sync_init
-                
-                self.logger.debug("Monkey-patched httpx.AsyncClient and httpx.Client to force verify=False")
-            except Exception as e:
-                self.logger.warning(f"Could not monkey-patch httpx clients: {e}")
-            
-            # Method 4: Monkey-patch MCP's create_mcp_http_client function
-            try:
-                from mcp.shared._httpx_utils import create_mcp_http_client
-                import httpx
-                
-                original_create = create_mcp_http_client
-                
-                def patched_create(**kwargs):
-                    # Force verify=False in the factory
-                    kwargs['verify'] = False
-                    self.logger.debug(f"MCP factory called with patched verify=False, kwargs={list(kwargs.keys())}")
-                    return original_create(**kwargs)
-                
-                # Replace the function in the module
-                import mcp.shared._httpx_utils
-                mcp.shared._httpx_utils.create_mcp_http_client = patched_create
-                self.logger.debug("Monkey-patched mcp.shared._httpx_utils.create_mcp_http_client")
-            except Exception as e:
-                self.logger.warning(f"Could not monkey-patch create_mcp_http_client: {e}")
-            
-            # Method 5: Suppress SSL warnings
-            warnings.filterwarnings('ignore', message='Unverified HTTPS request')
-            warnings.filterwarnings('ignore', message='InsecureRequestWarning')
-            
-            # Try to disable urllib3 warnings if available
-            try:
-                import urllib3
-                urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-                self.logger.debug("Disabled urllib3 SSL warnings")
-            except ImportError:
-                pass
-            
-            self._ssl_context_applied = True
-            self.logger.info("SSL verification workaround applied successfully (all methods including MCP factory monkey-patch)")
-            
-        except Exception as e:
-            self.logger.error(f"Failed to apply SSL workaround: {e}")
-            # Don't raise - let the connection attempt proceed
     
     async def reconnect_with_new_factory(self) -> None:
         """

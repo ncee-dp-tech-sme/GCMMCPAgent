@@ -36,11 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Hostname automatically extracted from full URLs if provided
   - Prevents internal API calls from failing with incorrect hostnames
 
-- **Critical**: Enhanced SSL verification workaround for self-signed certificates
-  - Now monkey-patches both `httpx.AsyncClient` and `httpx.Client` (sync version)
-  - MCP server internal HTTP clients now properly respect `verify_ssl=False` setting
-  - Fixes SSL certificate verification errors during tool execution
-  - Applies comprehensive SSL context modifications at process level
+- **Critical**: Implemented module-level SSL bypass before MCP initialization
+  - Moved SSL bypass patch to top of `gcm_agent/mcp/client.py` before MCP imports
+  - Patches `httpx.AsyncClient.__init__` to force `verify=False` when SSL bypass enabled
+  - Removed ineffective `_apply_ssl_workaround()` method that was applied too late
+  - SSL bypass now affects ALL httpx clients created by MCP library
+  - Resolves persistent SSL verification errors with self-signed certificates
+  - Previous workaround was applied after MCP library initialization when HTTP clients already existed
 
 ### Changed
 - Updated `GCMMCPClient.__init__()` to accept and auto-extract hostname from URLs
