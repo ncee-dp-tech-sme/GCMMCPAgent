@@ -18,10 +18,19 @@ Documentation-only repository - contains IBM Guardium Cryptography Manager MCP S
 - Must pass actual GCM hostname (not full URL) in MCP client headers
 - Example: `"x-gcm-hostname": "gcm.example.com"` for URL `https://gcm.example.com:9443`
 
+### SSL Bypass Implementation (Module-Level)
+- **Critical**: SSL bypass MUST be applied at module import time in `gcm_agent/__init__.py`
+- MCP library creates its own httpx.AsyncClient instances for protocol connections (SSE transport)
+- Application-level `_client_factory()` only affects GCM API calls, NOT MCP handshake
+- Solution: Patch `httpx.AsyncClient.__init__` globally before any MCP imports
+- Patch automatically sets `verify=False` unless explicitly overridden with `verify=True`
+- Applied in `gcm_agent/__init__.py` so ALL imports benefit (tests, app, modules)
+- Without module-level patch: SSL errors occur during MCP protocol handshake
+
 ### MCP Client Configuration Gotchas
 - `langchain-mcp-adapters` requires `streamable_http` transport for remote GCM server
-- SSL verification enabled by default - custom `_client_factory()` needed to override
-- Must pop `verify` kwarg before creating AsyncClient to avoid conflicts
+- SSL verification enabled by default - handled by module-level SSL bypass in `gcm_agent/__init__.py`
+- Custom `_client_factory()` still needed for token injection and header management
 
 ### LangChain MCP Adapter Parameter Wrapping
 - **Critical**: LangChain MCP adapter wraps tool parameters in nested `{"params": {...}}` structure
