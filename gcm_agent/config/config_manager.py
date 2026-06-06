@@ -5,6 +5,7 @@
 # 2026-06-05 21:02 UTC - Separated Keycloak configuration and added independent SSL verification
 # 2026-06-05 21:50 UTC - Added WatsonX URL configuration field
 # 2026-06-06 02:43 UTC - Added WatsonX SSL verification configuration support
+# 2026-06-06 04:26 UTC - Fixed "need more steps" issue: increased max_iterations to 20, disabled discovery_mode by default
 
 import json
 import threading
@@ -191,15 +192,19 @@ class LLMConfig(BaseModel):
 class AgentConfig(BaseModel):
     """Configuration for agent behavior."""
     
+    # Fix for "need more steps" issue: discovery_mode disabled by default for faster responses
+    # Enable discovery_mode for complex queries that need dynamic tool loading
     discovery_mode: bool = Field(
-        default=True,
-        description="Enable discovery mode (dynamic tool loading)"
+        default=False,
+        description="Enable discovery mode (dynamic tool loading). Disable for faster responses with all tools loaded upfront."
     )
+    # Fix for "need more steps" issue: increased from 10 to 20 to handle broad queries
+    # Discovery mode workflows need ~15-20 iterations for complex queries like "all keys/assets"
     max_iterations: int = Field(
-        default=10,
+        default=20,
         ge=1,
         le=100,
-        description="Maximum agent iterations"
+        description="Maximum agent iterations. Increased to handle broad queries like 'all keys/assets'."
     )
     timeout: int = Field(
         default=300,

@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-06-06
+
+### Fixed
+- **Critical**: Fixed "need more steps" error for broad queries
+  - Increased `max_iterations` from 10 to 20 in `AgentConfig` default configuration
+  - Changed `discovery_mode` default from True to False for better performance on common queries
+  - Agent now handles broad queries like "show me all keys" or "list all assets" without hitting iteration limits
+  - Discovery mode workflows typically need 15-20 iterations for complex queries with multiple tool calls
+  - Standard mode (discovery_mode=False) loads all 26 tools upfront, providing faster responses for typical operations
+  - Discovery mode now opt-in for complex scenarios requiring dynamic tool loading and sandboxed execution
+  - Modified file: `gcm_agent/config/config_manager.py` (lines 197, 203)
+  - Created test script: `test_max_iterations_fix.py` to validate the fix
+
+### Changed
+- **Agent Configuration Defaults**: Updated default behavior for better user experience
+  - `max_iterations`: 10 → 20 (allows complex multi-step operations to complete)
+  - `discovery_mode`: True → False (faster initialization and response times for common queries)
+  - Users can still enable discovery mode via Configuration UI for advanced use cases
+
+### Documentation
+- Updated `README.md` with information about handling broad queries
+- Updated `docs/USER_GUIDE.md` with:
+  - New example conversation showing broad query handling
+  - Updated Agent Settings section with new defaults and explanations
+  - Enhanced Discovery Mode section with configuration change details
+  - Guidance on when to use discovery mode vs standard mode
+- Updated `docs/TROUBLESHOOTING.md` with comprehensive "Need More Steps" error section
+  - Documented the fix and version where it was resolved
+  - Provided manual configuration steps for extreme edge cases
+  - Added guidance on when to increase max_iterations further
+- Updated `AGENTS.md` with technical details about the fix
+
+## [Unreleased]
+
 ### Added
 - **Comprehensive Header Logging**: Added detailed logging for Authorization Bearer token verification
   - Added token masking in logs (shows first 8 and last 4 characters only)
@@ -132,5 +166,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Secure token injection via custom client factory
 - Per-user isolated credential storage
 
-[Unreleased]: https://github.com/your-org/gcm-agent/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/your-org/gcm-agent/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/your-org/gcm-agent/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/your-org/gcm-agent/releases/tag/v1.0.0

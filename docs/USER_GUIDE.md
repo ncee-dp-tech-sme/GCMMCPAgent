@@ -172,13 +172,24 @@ Fine-tune agent behavior:
 
 | Setting | Description | Default | Range |
 |---------|-------------|---------|-------|
-| **Discovery Mode** | Enable dynamic tool loading | ✅ Enabled | On/Off |
-| **Max Iterations** | Maximum reasoning steps | 10 | 1-50 |
+| **Discovery Mode** | Enable dynamic tool loading | ❌ Disabled | On/Off |
+| **Max Iterations** | Maximum reasoning steps | 20 | 1-50 |
 | **Timeout** | Operation timeout in seconds | 300 | 60-600 |
 
 **Discovery Mode Explained:**
-- **Enabled (Recommended)**: Agent dynamically searches and loads only the tools it needs, improving performance
-- **Disabled**: All 26 GCM tools are loaded upfront, which may be slower but ensures all capabilities are available
+- **Disabled (Default/Recommended)**: All 26 GCM tools are loaded upfront for immediate access. Best for most use cases including broad queries like "show me all keys" or "list all assets". Provides faster responses for typical operations.
+- **Enabled (Advanced)**: Agent dynamically searches and loads only the tools it needs. Useful for complex scenarios requiring dynamic tool selection or when working with sandboxed execution and RBAC enforcement.
+
+**Max Iterations Explained:**
+- Increased from 10 to 20 in version 2026-06-06 to handle complex queries
+- Allows the agent to complete multi-step operations like aggregating data from multiple sources
+- Broad queries (e.g., "all keys", "all assets") typically require 15-20 iterations
+- Can be increased further for extremely complex workflows if needed
+
+**When to Adjust Settings:**
+- **Enable Discovery Mode** when you need dynamic tool loading for complex, varied operations
+- **Increase Max Iterations** (beyond 20) only for extremely complex queries that still hit the limit
+- **Decrease Max Iterations** if you want faster timeouts for simple queries (not recommended)
 
 ### Saving Configuration
 
@@ -291,6 +302,29 @@ Here are the cryptographic keys in your GCM instance:
 
 *[Additional keys listed...]*
 
+#### Broad Queries (All Keys/Assets)
+
+**You:** Show me all keys
+
+**Agent:** I'll retrieve all cryptographic keys from your GCM instance.
+
+*[Agent efficiently processes the broad query with multiple tool calls]*
+
+Found 47 cryptographic keys across all key groups:
+
+**Production Keys (15 keys)**
+- AES-256-Prod-001, AES-256-Prod-002, RSA-2048-Prod-001...
+
+**Development Keys (12 keys)**
+- AES-128-Dev-001, AES-256-Dev-001...
+
+**Test Keys (20 keys)**
+- Test-Key-001, Test-Key-002...
+
+*[Complete listing with details...]*
+
+> **Note:** The agent is optimized to handle broad queries like "all keys", "all assets", or "all key groups" efficiently. With the default configuration (max_iterations=20, discovery_mode=False), these queries complete successfully without hitting iteration limits.
+
 #### Getting Key Details
 
 **You:** Show me details for AES-256-Key-001
@@ -383,7 +417,7 @@ To save your conversation for documentation or review:
 
 ### Discovery Mode
 
-Discovery mode enables intelligent, on-demand tool loading for optimal performance.
+Discovery mode enables intelligent, on-demand tool loading for specialized scenarios.
 
 #### How It Works
 
@@ -400,25 +434,39 @@ Discovery mode enables intelligent, on-demand tool loading for optimal performan
    - Loads only what's needed
    - Executes the operation
 
-3. **Performance Benefits**:
-   - Faster initialization (5 tools vs 26 tools)
-   - Reduced memory footprint
-   - More focused AI reasoning
-   - Better token efficiency
+3. **Performance Characteristics**:
+   - Slower initialization for first query (tool discovery overhead)
+   - Reduced memory footprint (only loads needed tools)
+   - More focused AI reasoning for complex scenarios
+   - Better for sandboxed execution with RBAC
 
 #### When to Use Discovery Mode
 
-**Enable Discovery Mode (Recommended) when:**
-- You perform varied operations
-- You want optimal performance
-- You have limited system resources
-- You're exploring GCM capabilities
-
-**Disable Discovery Mode when:**
-- You need all tools immediately available
+**Disable Discovery Mode (Default/Recommended) when:**
+- You need all tools immediately available (most use cases)
+- You perform broad queries like "show me all keys" or "list all assets"
+- You want faster response times for typical operations
 - You perform repetitive operations
 - You want predictable tool availability
-- You're debugging tool-related issues
+
+**Enable Discovery Mode (Advanced) when:**
+- You need dynamic tool selection for complex, varied operations
+- You want sandboxed execution with RBAC enforcement
+- You have limited system resources and want minimal memory footprint
+- You're working with workflows that benefit from the `execute` tool
+
+#### Configuration Changes (2026-06-06)
+
+**Default Changed from Enabled to Disabled:**
+- Discovery mode is now **disabled by default** for better performance
+- Standard mode (all 26 tools loaded upfront) handles most queries more efficiently
+- Max iterations increased from 10 to 20 to support complex multi-step operations
+- This configuration change fixes the "need more steps" error for broad queries
+
+**Impact:**
+- Faster responses for common queries (no tool discovery overhead)
+- Broad queries like "all keys" or "all assets" now complete successfully
+- Complex queries requiring 15-20 iterations work without hitting limits
 
 ### Tool Execution
 
@@ -585,6 +633,55 @@ You can increase the timeout in Agent Settings if needed.
 
 For detailed troubleshooting, see [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).
 
+### Recent Fixes (2026-06-06)
+
+#### SSL Certificate Verification Error (Fixed)
+
+**Error:**
+```
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate
+```
+
+**Fix Applied:** The agent now properly applies SSL bypass at module level when verification is disabled. The fix ensures that SSL bypass works for both MCP protocol connections and GCM API calls.
+
+**How to Use:**
+1. Uncheck **"Verify SSL"** in Configuration for servers with self-signed certificates
+2. Save configuration and re-initialize the agent
+3. SSL bypass is now applied comprehensively across all connection types
+
+**Technical Details:** See [`SSL_BYPASS_FIX.md`](../SSL_BYPASS_FIX.md) for implementation details.
+
+#### Agent Streaming Errors (Fixed)
+
+**Errors:**
+```
+AttributeError: 'coroutine' object has no attribute 'value'
+TypeError: 'coroutine' object is not subscriptable
+```
+
+**Fix Applied:** The agent now properly handles tuple unpacking from `langchain-mcp-adapters` tools. The fix detects coroutines, awaits them, and correctly extracts content from `(content, artifact)` tuples.
+
+**Impact:** All tool executions now work reliably without streaming errors.
+
+**Technical Details:** See [`JSON_PARSING_ERROR_FIX.md`](../JSON_PARSING_ERROR_FIX.md) for implementation details.
+
+#### Discovery Mode Execute Tool Misuse (Fixed)
+
+**Errors:**
+```
+Unknown tool: list_tools
+NameError: name 'params' is not defined
+```
+
+**Fix Applied:** Updated discovery mode prompt to clarify when to use the execute tool. The LLM now correctly calls tools directly for simple queries instead of misusing the execute tool.
+
+**Impact:**
+- Simple queries like "get all certificates" now work correctly
+- Execute tool reserved for complex multi-step workflows
+- Faster and more reliable responses for common operations
+
+**Recommendation:** Keep discovery mode disabled (default) for most use cases.
+
 ---
 
 ## FAQ
@@ -717,10 +814,11 @@ When reporting issues, include:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2026-06-06 | 2026-06-06 | Added troubleshooting for SSL, streaming, and discovery mode fixes |
 | 1.0 | 2026-06-05 | Initial release |
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** 2026-06-05  
+**Document Version:** 2026-06-06
+**Last Updated:** 2026-06-06
 **Maintained By:** GCM Agent Development Team

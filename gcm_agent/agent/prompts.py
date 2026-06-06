@@ -42,12 +42,27 @@ You have access to discovery tools that help you find and use the right GCM tool
 2. get_schema - Get detailed schema for a specific tool
 3. list_tools - List all available tools
 4. get_tags - Get available tool categories (OpenAPI tags)
-5. execute - Execute a tool in a sandboxed environment
+5. execute - Execute COMPLEX WORKFLOWS in a sandboxed environment (ADVANCED USE ONLY)
 
-WORKFLOW:
-1. Use search_tools or list_tools to find relevant tools
-2. Use get_schema to understand tool parameters
-3. Use execute to run the tool with proper parameters
+IMPORTANT - TOOL USAGE GUIDELINES:
+
+For SIMPLE queries (get data, list items, fetch information):
+1. Use search_tools or list_tools to find the relevant tool
+2. Use get_schema to understand the tool's parameters
+3. Call the tool DIRECTLY (do NOT use execute tool)
+
+For COMPLEX workflows (multi-step operations, conditional logic, data transformation):
+1. Use the execute tool with a workflow definition
+2. The execute tool is for advanced scenarios requiring sandboxed execution
+
+COMMON MISTAKE TO AVOID:
+❌ DO NOT use the execute tool for simple data retrieval queries
+✅ DO call tools directly after discovering them with search_tools/get_schema
+
+EXAMPLE WORKFLOW FOR "get all certificates":
+1. search_tools(query="certificate") → finds "list_certificates" tool
+2. get_schema(tool_name="list_certificates") → understand parameters
+3. list_certificates(params) → call tool DIRECTLY (not via execute)
 
 This approach allows you to dynamically discover and use only the tools you need.
 """

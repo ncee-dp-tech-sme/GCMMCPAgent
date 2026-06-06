@@ -1,6 +1,8 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-06 04:38 UTC - Fixed async/await error in execute_tool by checking if result is a coroutine and awaiting it (fixes 'execute' tool TypeError)
+# 2026-06-06 04:10 UTC - Enhanced error logging in get_tools() to capture TaskGroup exception details with full traceback
 # 2026-06-06 02:59 UTC - Fixed x-gcm-hostname header propagation by passing gcm_hostname to _client_factory during token refresh
 # 2026-06-06 01:59 UTC - Added parameter unwrapping to fix Pydantic validation errors from LangChain MCP adapter nested params structure
 # 2026-06-06 01:08 UTC - Removed module-level SSL bypass (now handled at app.py startup)
@@ -16,6 +18,8 @@
 
 from typing import Callable, Optional, List, Dict, Any
 import asyncio
+import traceback
+import sys
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
@@ -163,6 +167,12 @@ class GCMMCPClient:
         await self._check_and_refresh_token()
         
         try:
+            # Log connection parameters for debugging
+            mcp_url = f"{self.gcm_url}/ibm/mcp/mcp"
+            self.logger.debug(f"MCP Endpoint URL: {mcp_url}")
+            self.logger.debug(f"Headers: x-mcp-code-mode={'true' if self.discovery_mode else 'false'}, x-gcm-hostname={self.gcm_hostname}")
+            self.logger.debug(f"Timeout: {self.timeout}s")
+            
             # Create MCP client with streamable_http transport
             # This is critical for remote GCM server integration
             # Note: As of langchain-mcp-adapters 0.1.0, MultiServerMCPClient
@@ -171,7 +181,7 @@ class GCMMCPClient:
                 {
                     "gcm": {
                         "transport": "streamable_http",
-                        "url": f"{self.gcm_url}/ibm/mcp/mcp",
+                        "url": mcp_url,
                         "headers": {
                             "x-mcp-code-mode": "true" if self.discovery_mode else "false",
                             "x-gcm-hostname": self.gcm_hostname
@@ -193,7 +203,25 @@ class GCMMCPClient:
             await self._fetch_server_info()
             
         except Exception as e:
-            self.logger.error(f"Failed to connect to MCP server: {e}")
+            # Enhanced error logging for connection failures
+            self.logger.error("=" * 80)
+            self.logger.error("DETAILED ERROR INFORMATION FOR MCP CONNECTION FAILURE")
+            self.logger.error("=" * 80)
+            self.logger.error(f"Exception Type: {type(e).__name__}")
+            self.logger.error(f"Exception Message: {str(e)}")
+            self.logger.error("\nFull Traceback:")
+            self.logger.error(traceback.format_exc())
+            
+            # Log connection parameters
+            self.logger.error("\nConnection Parameters:")
+            self.logger.error(f"  GCM URL: {self.gcm_url}")
+            self.logger.error(f"  MCP Endpoint: {self.gcm_url}/ibm/mcp/mcp")
+            self.logger.error(f"  GCM Hostname: {self.gcm_hostname}")
+            self.logger.error(f"  Discovery Mode: {self.discovery_mode}")
+            self.logger.error(f"  Timeout: {self.timeout}s")
+            self.logger.error(f"  Verify SSL: {self.verify_ssl}")
+            self.logger.error("=" * 80)
+            
             from gcm_agent.mcp import MCPConnectionError
             raise MCPConnectionError(f"Failed to connect to MCP server: {e}") from e
     
@@ -277,7 +305,62 @@ class GCMMCPClient:
             return tools
             
         except Exception as e:
-            self.logger.error(f"Failed to fetch tools from MCP server: {e}")
+            # Enhanced error logging for TaskGroup and other exceptions
+            self.logger.error("=" * 80)
+            self.logger.error("DETAILED ERROR INFORMATION FOR TOOL LOADING FAILURE")
+            self.logger.error("=" * 80)
+            
+            # Log exception type and message
+            exc_type = type(e).__name__
+            self.logger.error(f"Exception Type: {exc_type}")
+            self.logger.error(f"Exception Message: {str(e)}")
+            
+            # Log full traceback
+            self.logger.error("\nFull Traceback:")
+            self.logger.error(traceback.format_exc())
+            
+            # For TaskGroup exceptions, try to extract sub-exceptions
+            if "TaskGroup" in exc_type or "TaskGroup" in str(e):
+                self.logger.error("\nTaskGroup Exception Detected - Attempting to extract sub-exceptions:")
+                
+                # Try to access __cause__ and __context__ for nested exceptions
+                if hasattr(e, '__cause__') and e.__cause__:
+                    self.logger.error(f"\n__cause__: {type(e.__cause__).__name__}: {e.__cause__}")
+                    self.logger.error("Cause Traceback:")
+                    self.logger.error(''.join(traceback.format_exception(type(e.__cause__), e.__cause__, e.__cause__.__traceback__)))
+                
+                if hasattr(e, '__context__') and e.__context__:
+                    self.logger.error(f"\n__context__: {type(e.__context__).__name__}: {e.__context__}")
+                    self.logger.error("Context Traceback:")
+                    self.logger.error(''.join(traceback.format_exception(type(e.__context__), e.__context__, e.__context__.__traceback__)))
+                
+                # Try to access exceptions attribute if it's an ExceptionGroup
+                if hasattr(e, 'exceptions'):
+                    self.logger.error(f"\nFound {len(e.exceptions)} sub-exception(s):")
+                    for idx, sub_exc in enumerate(e.exceptions, 1):
+                        self.logger.error(f"\nSub-exception {idx}:")
+                        self.logger.error(f"  Type: {type(sub_exc).__name__}")
+                        self.logger.error(f"  Message: {str(sub_exc)}")
+                        self.logger.error("  Traceback:")
+                        self.logger.error(''.join(traceback.format_exception(type(sub_exc), sub_exc, sub_exc.__traceback__)))
+            
+            # Log MCP client state
+            self.logger.error("\nMCP Client State:")
+            self.logger.error(f"  Connected: {self._connected}")
+            self.logger.error(f"  MCP Client: {self._mcp_client is not None}")
+            self.logger.error(f"  GCM URL: {self.gcm_url}")
+            self.logger.error(f"  GCM Hostname: {self.gcm_hostname}")
+            self.logger.error(f"  Discovery Mode: {self.discovery_mode}")
+            self.logger.error(f"  Timeout: {self.timeout}s")
+            self.logger.error(f"  Verify SSL: {self.verify_ssl}")
+            
+            # Log Python and system info
+            self.logger.error("\nSystem Information:")
+            self.logger.error(f"  Python Version: {sys.version}")
+            self.logger.error(f"  Platform: {sys.platform}")
+            
+            self.logger.error("=" * 80)
+            
             from gcm_agent.mcp import MCPToolError
             raise MCPToolError(f"Failed to fetch tools: {e}") from e
     
@@ -335,10 +418,35 @@ class GCMMCPClient:
         # Check and refresh token before operation
         await self._check_and_refresh_token()
         
+        # === JSON DEBUGGING: Log raw arguments ===
+        import json
+        self.logger.info("=" * 80)
+        self.logger.info(f"EXECUTE TOOL DEBUG: '{tool_name}'")
+        self.logger.info("=" * 80)
+        self.logger.info(f"Raw arguments type: {type(arguments)}")
+        self.logger.info(f"Raw arguments: {arguments}")
+        
+        # Try to serialize arguments to JSON to check for malformed data
+        try:
+            json_args = json.dumps(arguments, indent=2)
+            self.logger.info(f"Arguments as JSON (valid):\n{json_args}")
+        except (TypeError, ValueError) as e:
+            self.logger.error(f"Arguments cannot be serialized to JSON: {e}")
+            self.logger.error(f"This indicates malformed data from LLM")
+        
         # Unwrap nested params structure if present (handles LangChain MCP adapter wrapping)
         unwrapped_arguments = self._unwrap_params(arguments)
         
-        self.logger.info(f"Executing tool '{tool_name}' with arguments: {unwrapped_arguments}")
+        self.logger.info(f"Unwrapped arguments type: {type(unwrapped_arguments)}")
+        self.logger.info(f"Unwrapped arguments: {unwrapped_arguments}")
+        
+        # Validate unwrapped arguments can be serialized to JSON
+        try:
+            json_unwrapped = json.dumps(unwrapped_arguments, indent=2)
+            self.logger.info(f"Unwrapped arguments as JSON (valid):\n{json_unwrapped}")
+        except (TypeError, ValueError) as e:
+            self.logger.error(f"Unwrapped arguments cannot be serialized to JSON: {e}")
+            self.logger.error(f"This indicates parameter unwrapping introduced malformed data")
         
         try:
             # Get tools to find the requested tool
@@ -356,12 +464,61 @@ class GCMMCPClient:
                 raise ToolNotFoundError(f"Tool '{tool_name}' not found")
             
             # Execute the tool with unwrapped arguments
+            # LangChain MCP adapter tools return a tuple: (content, artifact)
+            # when response_format="content_and_artifact" is set
             result = await tool.ainvoke(unwrapped_arguments)
             
-            self.logger.info(f"Successfully executed tool '{tool_name}'")
-            self.logger.debug(f"Tool result: {result}")
+            # Add detailed logging to understand result structure
+            import inspect
+            self.logger.debug(f"Tool '{tool_name}' result type: {type(result)}")
+            self.logger.debug(f"Tool '{tool_name}' result is coroutine: {inspect.iscoroutine(result)}")
             
-            return result
+            # Check if result is a coroutine (some tools may return coroutines)
+            # This can happen with the 'execute' tool in discovery mode
+            if inspect.iscoroutine(result):
+                self.logger.debug(f"Tool '{tool_name}' returned a coroutine, awaiting it")
+                result = await result
+                self.logger.debug(f"After await - result type: {type(result)}")
+            
+            # LangChain MCP adapter returns (content, artifact) tuple
+            # Extract just the content part for the agent
+            if isinstance(result, tuple) and len(result) == 2:
+                content, artifact = result
+                self.logger.debug(f"Tool returned tuple: content type={type(content)}, artifact type={type(artifact)}")
+                actual_result = content
+            else:
+                self.logger.debug(f"Tool returned non-tuple result: {type(result)}")
+                actual_result = result
+            
+            # === JSON DEBUGGING: Log tool result ===
+            self.logger.info(f"Tool result type: {type(actual_result)}")
+            self.logger.info(f"Tool result: {actual_result}")
+            
+            # Try to serialize result to JSON to check for malformed response
+            try:
+                if isinstance(actual_result, str):
+                    # If result is a string, try to parse it as JSON
+                    try:
+                        parsed_result = json.loads(actual_result)
+                        self.logger.info(f"Result is valid JSON string, parsed to: {type(parsed_result)}")
+                        json_result = json.dumps(parsed_result, indent=2)
+                        self.logger.info(f"Parsed result as JSON:\n{json_result}")
+                    except json.JSONDecodeError as je:
+                        self.logger.error(f"Result is a string but NOT valid JSON: {je}")
+                        self.logger.error(f"Malformed JSON at position {je.pos}: {actual_result[max(0, je.pos-50):je.pos+50]}")
+                        self.logger.error(f"This indicates the execute tool returned malformed JSON")
+                else:
+                    # Result is not a string, try to serialize it
+                    json_result = json.dumps(actual_result, indent=2)
+                    self.logger.info(f"Result as JSON (valid):\n{json_result}")
+            except (TypeError, ValueError) as e:
+                self.logger.error(f"Result cannot be serialized to JSON: {e}")
+                self.logger.error(f"This indicates the tool returned non-serializable data")
+            
+            self.logger.info("=" * 80)
+            self.logger.info(f"Successfully executed tool '{tool_name}'")
+            
+            return actual_result
             
         except Exception as e:
             self.logger.error(f"Failed to execute tool '{tool_name}': {e}")

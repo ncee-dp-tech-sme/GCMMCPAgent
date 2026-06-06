@@ -19,6 +19,7 @@ The GCM Agent enables you to manage cryptographic assets, query key information,
 - 📝 **Conversation History** - Maintains context across multiple interactions
 - 💾 **Export Capabilities** - Save conversations for documentation or review
 - 🎨 **User-Friendly UI** - Gradio-based web interface for configuration and chat
+- 🚀 **Handles Complex Queries** - Efficiently processes broad queries like "show me all keys" or "list all assets"
 
 ### Architecture Highlights
 
@@ -57,7 +58,7 @@ For detailed architecture information, see [`docs/architecture/GCM-Agent-Archite
 
 - **Python 3.10+** installed on your system
 - **IBM Guardium Cryptography Manager** access with valid credentials
-- **WatsonX credentials** (API key and project ID)
+- **WatsonX/OpenAI credentials** (API key and project ID)
 - **Network connectivity** to GCM server and WatsonX services
 
 ### Installation
@@ -221,17 +222,20 @@ GCMMCPAgent/
 
 ### Dynamic Tool Discovery
 
-**Discovery Mode (Recommended)**:
+**Discovery Mode**:
 - Starts with 5 discovery tools (search, get_schema, list_tools, tags, execute)
 - Dynamically loads only needed tools based on user queries
 - Faster initialization and reduced memory footprint
-- Optimal for varied operations
+- Optimal for complex scenarios requiring dynamic tool selection
+- **Note:** Discovery mode is now disabled by default for better performance on common queries
 
-**Standard Mode**:
+**Standard Mode (Default)**:
 - Loads all 26 GCM tools upfront
 - Immediate access to all capabilities
-- Better for repetitive operations
+- Better for repetitive operations and broad queries
 - Predictable tool availability
+- **Recommended for most use cases** - handles queries like "show me all keys" efficiently
+- Agent configured with 20 max iterations to handle complex multi-step operations
 
 ### LangGraph Agent Architecture
 
@@ -475,6 +479,54 @@ The agent is designed for future integration with Watsonx Orchestrate:
 | Slow initialization | Enable discovery mode |
 | Agent not responding | Reinitialize agent, check logs |
 | Gradio message format error | Update to latest version (fixed in v1.0) |
+| "Need more steps" error | Increase max_iterations (default now 20) or disable discovery mode |
+| AttributeError: 'coroutine' object | Fixed in v2026-06-06 - update to latest version |
+| Discovery mode execute tool errors | Fixed in v2026-06-06 - LLM now calls tools directly for simple queries |
+
+### Common Error Messages
+
+#### SSL Certificate Verification Failed
+
+**Error:**
+```
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate
+```
+
+**Solution:**
+1. Navigate to **⚙️ Configuration** tab
+2. Uncheck **"Verify SSL"** for the affected server (Keycloak or GCM)
+3. Click **💾 Save Configuration**
+4. Return to **💬 Chat** tab and click **🚀 Initialize Agent**
+
+**Technical Details:** The agent applies comprehensive SSL bypass at module level when verification is disabled. See [`SSL_BYPASS_FIX.md`](SSL_BYPASS_FIX.md) for implementation details.
+
+#### Agent Streaming Errors (Fixed in v2026-06-06)
+
+**Error:**
+```
+AttributeError: 'coroutine' object has no attribute 'value'
+TypeError: 'coroutine' object is not subscriptable
+```
+
+**Solution:** These errors were fixed in version 2026-06-06. Update to the latest version:
+```bash
+git pull origin main
+pip install -r requirements.txt
+```
+
+**Technical Details:** The fix properly handles tuple unpacking from `langchain-mcp-adapters` tools. See [`JSON_PARSING_ERROR_FIX.md`](JSON_PARSING_ERROR_FIX.md) for details.
+
+#### Discovery Mode Execute Tool Misuse (Fixed in v2026-06-06)
+
+**Error:**
+```
+Unknown tool: list_tools
+NameError: name 'params' is not defined
+```
+
+**Solution:** This was fixed in version 2026-06-06 by updating the discovery mode prompt. The LLM now correctly calls tools directly for simple queries instead of misusing the execute tool.
+
+**Recommendation:** Keep discovery mode disabled (default) for most use cases. Enable only for complex workflows requiring dynamic tool selection.
 
 For detailed troubleshooting, see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
@@ -608,10 +660,11 @@ Built with:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 2026-06-06 | 2026-06-06 | Fixed SSL certificate verification, tuple unpacking, and discovery mode prompt issues |
 | 1.0 | 2026-06-05 | Initial release with core functionality |
 
 ---
 
-**Maintained By:** GCM Agent Development Team  
-**Last Updated:** 2026-06-05  
-**Version:** 1.0
+**Maintained By:** GCM Agent Development Team
+**Last Updated:** 2026-06-06
+**Version:** 2026-06-06

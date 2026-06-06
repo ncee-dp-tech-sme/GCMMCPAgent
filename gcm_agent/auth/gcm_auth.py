@@ -1,6 +1,7 @@
 """GCM authorization module for completing the second authentication step against user management endpoints."""
 
 # Made with Bob
+# 2026-06-06 07:17 UTC - CRITICAL FIX: Changed all httpx.AsyncClient creation to NOT pass verify parameter when verify_ssl=False, allowing module-level SSL bypass patch to apply
 # 2026-06-06 06:00 UTC - Added comprehensive header logging with token masking for debugging Authorization Bearer token
 # 2026-06-06 02:59 UTC - Added gcm_hostname parameter to _client_factory to inject x-gcm-hostname header in all HTTP requests
 # 2026-06-06 01:40 UTC - Fixed token refresh to properly update token expiration info after refresh, preventing SSL errors after token expiry
@@ -179,7 +180,16 @@ class GCMAuthenticator:
         self.logger.info(f"Authorization request to {authorize_url} with headers: {masked_headers}")
 
         try:
-            async with httpx.AsyncClient(verify=self.verify_ssl) as client:
+            # CRITICAL: Only pass verify if SSL verification is explicitly enabled
+            # This allows the module-level SSL bypass patch to apply when verify_ssl=False
+            client_kwargs = {}
+            if self.verify_ssl:
+                client_kwargs["verify"] = True
+                self.logger.debug("Authorization: SSL verification ENABLED")
+            else:
+                self.logger.debug("Authorization: SSL verification DISABLED - using module-level bypass")
+            
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.post(
                     authorize_url,
                     headers=headers,
@@ -231,13 +241,20 @@ class GCMAuthenticator:
             "Content-Type": "application/json",
         }
 
-        client = httpx.AsyncClient(
-            headers=headers,
-            verify=self.verify_ssl,
-            timeout=timeout,
-        )
+        # CRITICAL: Only pass verify if SSL verification is explicitly enabled
+        # This allows the module-level SSL bypass patch to apply when verify_ssl=False
+        client_kwargs = {
+            "headers": headers,
+            "timeout": timeout,
+        }
+        
+        if self.verify_ssl:
+            client_kwargs["verify"] = True
+            self.logger.debug("Created authenticated HTTP client with SSL verification ENABLED")
+        else:
+            self.logger.debug("Created authenticated HTTP client with SSL verification DISABLED (module-level bypass)")
 
-        self.logger.debug("Created authenticated HTTP client")
+        client = httpx.AsyncClient(**client_kwargs)
         return client
 
     def _client_factory(
@@ -361,27 +378,44 @@ class GCMAuthenticator:
             
             async def log_response(response):
                 """Log HTTP responses."""
+                try:
+                    # Try to access elapsed time (may fail for streaming responses)
+                    elapsed_time = f"Time: {response.elapsed.total_seconds():.2f}s"
+                except RuntimeError:
+                    # For streaming responses, elapsed is not available until consumed
+                    elapsed_time = "Time: N/A (streaming)"
+                
                 logger.debug(
-                    f"HTTP Response: {response.status_code} from {response.url} | "
-                    f"Time: {response.elapsed.total_seconds():.2f}s"
+                    f"HTTP Response: {response.status_code} from {response.url} | {elapsed_time}"
                 )
             
-            # Create client with explicit SSL verification setting and event hooks
-            # For self-signed certs, verify_ssl will be False
-            client = httpx.AsyncClient(
-                headers=merged_headers,
-                verify=verify_ssl,
-                timeout=timeout,
-                trust_env=False,  # Don't use environment SSL settings
-                follow_redirects=True,  # Follow redirects
-                event_hooks={
+            # Create client with event hooks
+            # CRITICAL: Do NOT pass verify parameter - let module-level SSL bypass handle it
+            # The global patch in gcm_agent/__init__.py sets verify=False for all clients
+            # unless explicitly overridden. Passing verify=True here would override the patch.
+            client_kwargs = {
+                "headers": merged_headers,
+                "timeout": timeout,
+                "trust_env": False,  # Don't use environment SSL settings
+                "follow_redirects": True,  # Follow redirects
+                "event_hooks": {
                     "request": [log_request],
                     "response": [log_response],
                 },
                 **kwargs,
-            )
+            }
             
-            logger.debug(f"AsyncClient created successfully with verify={verify_ssl} and event hooks enabled")
+            # Only pass verify if SSL verification is explicitly enabled
+            # This allows the module-level patch to apply when verify_ssl=False
+            if verify_ssl:
+                client_kwargs["verify"] = True
+                logger.debug("SSL verification ENABLED - will verify certificates")
+            else:
+                logger.debug("SSL verification DISABLED - relying on module-level bypass")
+            
+            client = httpx.AsyncClient(**client_kwargs)
+            
+            logger.debug(f"AsyncClient created successfully with SSL bypass={'disabled' if verify_ssl else 'enabled'}")
             return client
 
         self.logger.debug(f"Created authenticated client factory (verify_ssl={verify_ssl})")
@@ -407,3 +441,4 @@ class GCMAuthenticator:
 class GCMAuthError(Exception):
     """Raised when GCM authorization fails."""
     pass
+

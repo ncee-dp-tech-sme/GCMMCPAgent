@@ -911,6 +911,103 @@ asyncio.run(test_tool())
 - Test direct connection if possible
 
 ---
+### "Need More Steps" Error (Max Iterations Exceeded)
+
+#### Symptom
+```
+❌ Sorry, need more steps to process this request.
+Agent stopped after reaching maximum iterations (10)
+```
+
+This error typically occurs when asking broad queries like:
+- "Show me all keys"
+- "List all assets"
+- "Get all key groups"
+- Other queries requiring multiple tool calls and data aggregation
+
+#### Root Cause
+
+The agent hit the maximum iteration limit before completing the query. Complex queries that involve:
+- Multiple tool calls
+- Data aggregation from different sources
+- Iterative processing of large result sets
+
+These operations can require 15-20 iterations to complete successfully.
+
+#### Solution (Fixed in Version 2026-06-06)
+
+**This issue has been resolved in version 2026-06-06** with the following changes:
+
+1. **Increased Max Iterations**: Default changed from 10 to 20
+2. **Discovery Mode Disabled by Default**: Standard mode loads all tools upfront for better performance
+3. **Optimized for Broad Queries**: Configuration now handles complex multi-step operations efficiently
+
+**If you're running version 2026-06-06 or later**, broad queries should work without this error.
+
+#### Manual Configuration (If Still Encountering Issues)
+
+If you still encounter this error with extremely complex queries:
+
+**1. Increase Max Iterations Further**
+
+Via Configuration UI:
+1. Navigate to **⚙️ Configuration** tab
+2. In **Agent Settings** section, increase **Max Iterations** to 30 or 40
+3. Click **💾 Save Configuration**
+4. Return to **💬 Chat** tab
+5. Click **🚀 Initialize Agent** to apply changes
+
+Via Configuration File:
+```python
+# Edit ~/.gcm_agent/.credentials.enc (after decryption)
+# Or modify gcm_agent/config/config_manager.py defaults
+max_iterations = 30  # Increase from 20 to 30 or higher
+```
+
+**2. Verify Discovery Mode is Disabled**
+
+Discovery mode adds overhead for broad queries. Ensure it's disabled:
+1. Navigate to **⚙️ Configuration** tab
+2. In **Agent Settings**, ensure **Discovery Mode** is **unchecked**
+3. Click **💾 Save Configuration**
+4. Reinitialize the agent
+
+**3. Break Down Complex Queries**
+
+Instead of:
+```
+"Show me all keys with their details, groups, and permissions"
+```
+
+Try sequential queries:
+```
+1. "List all keys"
+2. "Show details for keys in Production group"
+3. "Show permissions for key AES-256-Key-001"
+```
+
+#### Verification
+
+Test with a broad query:
+```
+You: Show me all keys
+Agent: [Should successfully list all keys without hitting iteration limit]
+```
+
+If successful, the configuration is working correctly.
+
+#### When to Increase Max Iterations
+
+Consider increasing max_iterations beyond 20 when:
+- Working with very large GCM deployments (hundreds of keys/assets)
+- Performing complex multi-step workflows
+- Aggregating data from multiple sources
+- Building comprehensive reports
+
+**Note:** Higher iteration counts increase processing time and token usage. Start with 20 and increase only if needed.
+
+---
+
 
 ## Performance Issues
 
