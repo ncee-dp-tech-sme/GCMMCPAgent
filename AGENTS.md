@@ -7,6 +7,57 @@ Full-stack Python application - IBM Guardium Cryptography Manager MCP Server int
 
 ## Recent Updates (2026-06-06)
 
+### Investigated SSL Bypass Failure - MCP Server Configuration Required (2026-06-06 08:00 UTC)
+
+**Critical Finding: SSL errors are SERVER-SIDE, not client-side**
+
+**Root Cause:**
+The SSL certificate verification error (`[SSL: CERTIFICATE_VERIFY_FAILED]`) occurs when the **GCM MCP Server** (remote service) makes internal HTTPS calls to GCM API endpoints. Our client-side SSL bypass is working correctly.
+
+**Architecture:**
+```
+Client (Our Code) ──HTTPS──> MCP Server (Remote) ──HTTPS──> GCM APIs (Backend)
+      ✅ SSL Bypass              ❌ SSL Verification           Self-Signed Certs
+       Working                      Failing
+```
+
+**What We Verified:**
+1. ✅ Client-side SSL bypass in `gcm_agent/__init__.py` is working correctly
+2. ✅ Module-level httpx.AsyncClient patch applies before all imports
+3. ✅ Test script confirms SSL verification is disabled for our clients
+4. ❌ MCP server's internal API calls fail SSL verification (server-side issue)
+
+**Why Client-Side Fix Doesn't Help:**
+- Our SSL bypass only affects httpx clients created by OUR code
+- The MCP server is a separate Python process running on the GCM server
+- MCP server creates its own httpx/requests clients for internal API calls
+- Our module-level patch doesn't affect the MCP server's process
+
+**Available Headers (None Control SSL):**
+- `x-mcp-code-mode`: Controls discovery mode (true/false)
+- `x-gcm-hostname`: Provides hostname for internal API URLs
+- `Authorization`: Bearer token authentication
+- **NO header exists to control MCP server's SSL verification**
+
+**Solution Required:**
+The GCM MCP Server must be configured server-side to bypass SSL verification:
+1. Access GCM MCP server configuration (charts/aim-mcp-server/values.yaml or similar)
+2. Add `verify_ssl: false` to backend configuration
+3. Or install proper SSL certificates on GCM server (production solution)
+4. Or add CA certificate to MCP server's trust store
+
+**What We've Already Fixed:**
+- ✅ `gcm_agent/__init__.py`: Module-level SSL bypass for all client-side httpx clients
+- ✅ `gcm_agent/auth/gcm_auth.py`: Respects module-level SSL bypass
+- ✅ `gcm_agent/auth/keycloak_auth.py`: Respects module-level SSL bypass
+
+**Documentation:**
+- Full analysis: `SSL_BYPASS_MCP_SERVER_ISSUE.md`
+- Test scripts: `test_ssl_bypass_verification.py`, `test_ssl_bypass_import_order.py`
+
+**Action Required:**
+Contact GCM administrator to configure MCP server SSL verification or install proper certificates.
+
 ### Investigated 405 Method Not Allowed and Execute JSON Parsing Errors (2026-06-06 05:43 UTC)
 
 **Root Cause Summary:**
