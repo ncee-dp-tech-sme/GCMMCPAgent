@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-06 05:43 UTC - Added execute payload normalization/validation and targeted 405 error enrichment for policy_violations_dashboard
 # 2026-06-06 04:38 UTC - Fixed async/await error in execute_tool by checking if result is a coroutine and awaiting it (fixes 'execute' tool TypeError)
 # 2026-06-06 04:10 UTC - Enhanced error logging in get_tools() to capture TaskGroup exception details with full traceback
 # 2026-06-06 02:59 UTC - Fixed x-gcm-hostname header propagation by passing gcm_hostname to _client_factory during token refresh
@@ -20,6 +21,7 @@ from typing import Callable, Optional, List, Dict, Any
 import asyncio
 import traceback
 import sys
+import json
 
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
@@ -391,6 +393,48 @@ class GCMMCPClient:
         
         # Return original structure if no unwrapping needed
         return arguments
+
+    # Normalize execute tool payloads before sending them to MCP.
+    def _normalize_execute_arguments(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize execute tool arguments into a valid dictionary payload.
+        
+        Accepts either a dictionary or a JSON string under common wrapper keys.
+        Raises a ValueError with actionable context when malformed JSON is detected.
+        """
+        if not isinstance(arguments, dict):
+            raise ValueError(
+                f"Execute tool requires a dictionary payload, received {type(arguments).__name__}"
+            )
+
+        normalized_arguments = self._unwrap_params(arguments)
+
+        if isinstance(normalized_arguments, dict):
+            for key in ("workflow", "input", "payload"):
+                value = normalized_arguments.get(key)
+                if isinstance(value, str):
+                    try:
+                        parsed_value = json.loads(value)
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(
+                            f"Execute tool received malformed JSON in '{key}' at byte {exc.pos}: {exc.msg}"
+                        ) from exc
+                    if not isinstance(parsed_value, dict):
+                        raise ValueError(
+                            f"Execute tool '{key}' JSON must decode to an object, received {type(parsed_value).__name__}"
+                        )
+                    self.logger.warning(
+                        f"Execute tool '{key}' was provided as JSON string; normalized to dictionary payload"
+                    )
+                    return parsed_value
+
+            if "tool_name" in normalized_arguments:
+                return normalized_arguments
+
+        raise ValueError(
+            "Execute tool requires a workflow object containing at least 'tool_name'. "
+            f"Received keys: {list(normalized_arguments.keys()) if isinstance(normalized_arguments, dict) else 'non-dict'}"
+        )
     
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
@@ -418,8 +462,7 @@ class GCMMCPClient:
         # Check and refresh token before operation
         await self._check_and_refresh_token()
         
-        # === JSON DEBUGGING: Log raw arguments ===
-        import json
+        # Log tool execution inputs for debugging.
         self.logger.info("=" * 80)
         self.logger.info(f"EXECUTE TOOL DEBUG: '{tool_name}'")
         self.logger.info("=" * 80)
@@ -432,21 +475,24 @@ class GCMMCPClient:
             self.logger.info(f"Arguments as JSON (valid):\n{json_args}")
         except (TypeError, ValueError) as e:
             self.logger.error(f"Arguments cannot be serialized to JSON: {e}")
-            self.logger.error(f"This indicates malformed data from LLM")
+            self.logger.error("This indicates malformed data from LLM or caller")
         
-        # Unwrap nested params structure if present (handles LangChain MCP adapter wrapping)
-        unwrapped_arguments = self._unwrap_params(arguments)
+        # Normalize execute payloads and unwrap standard tool params.
+        if tool_name == "execute":
+            unwrapped_arguments = self._normalize_execute_arguments(arguments)
+        else:
+            unwrapped_arguments = self._unwrap_params(arguments)
         
-        self.logger.info(f"Unwrapped arguments type: {type(unwrapped_arguments)}")
-        self.logger.info(f"Unwrapped arguments: {unwrapped_arguments}")
+        self.logger.info(f"Normalized arguments type: {type(unwrapped_arguments)}")
+        self.logger.info(f"Normalized arguments: {unwrapped_arguments}")
         
-        # Validate unwrapped arguments can be serialized to JSON
+        # Validate normalized arguments can be serialized to JSON
         try:
             json_unwrapped = json.dumps(unwrapped_arguments, indent=2)
-            self.logger.info(f"Unwrapped arguments as JSON (valid):\n{json_unwrapped}")
+            self.logger.info(f"Normalized arguments as JSON (valid):\n{json_unwrapped}")
         except (TypeError, ValueError) as e:
-            self.logger.error(f"Unwrapped arguments cannot be serialized to JSON: {e}")
-            self.logger.error(f"This indicates parameter unwrapping introduced malformed data")
+            self.logger.error(f"Normalized arguments cannot be serialized to JSON: {e}")
+            self.logger.error("This indicates malformed tool payload after normalization")
         
         try:
             # Get tools to find the requested tool
@@ -521,9 +567,23 @@ class GCMMCPClient:
             return actual_result
             
         except Exception as e:
-            self.logger.error(f"Failed to execute tool '{tool_name}': {e}")
+            error_message = str(e)
+
+            if tool_name == "policy_violations_dashboard" and "405" in error_message:
+                error_message = (
+                    f"{error_message} | Root cause likely on remote GCM MCP server: "
+                    "tool 'policy_violations_dashboard' appears to be mapped to an HTTP method "
+                    "the backend rejects. Local client forwards MCP tool calls and does not choose "
+                    "the REST method. Verify the server-side tool schema/method mapping for "
+                    "/ibm/gempolicyengine/api/v1/violations/dashboards/policy-violations."
+                )
+
+            self.logger.error(f"Failed to execute tool '{tool_name}': {error_message}")
+            self.logger.error(f"Tool execution context: tool_name={tool_name}, discovery_mode={self.discovery_mode}")
+            self.logger.error(f"Tool arguments at failure: {unwrapped_arguments if 'unwrapped_arguments' in locals() else arguments}")
+
             from gcm_agent.mcp import MCPToolError
-            raise MCPToolError(f"Failed to execute tool '{tool_name}': {e}") from e
+            raise MCPToolError(f"Failed to execute tool '{tool_name}': {error_message}") from e
     
     def is_connected(self) -> bool:
         """

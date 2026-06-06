@@ -7,6 +7,47 @@ Full-stack Python application - IBM Guardium Cryptography Manager MCP Server int
 
 ## Recent Updates (2026-06-06)
 
+### Investigated 405 Method Not Allowed and Execute JSON Parsing Errors (2026-06-06 05:43 UTC)
+
+**Root Cause Summary:**
+
+1. **`policy_violations_dashboard` 405 is server-side, not client-side**
+   - The tool exists and is exposed in both discovery and standard modes
+   - Runtime logs show the remote MCP server calling:
+     `GET /ibm/gempolicyengine/api/v1/violations/dashboards/policy-violations`
+   - The local client does **not** choose the REST method; `langchain-mcp-adapters` forwards MCP tool calls to the MCP server, and the MCP server/tool schema determines the backend HTTP method
+   - Repository reference files also map `violations.dashboard` to `GET`, so the 405 indicates a mismatch between the remote server's tool mapping and what the backend currently accepts
+
+2. **`execute` JSON parsing errors were caused by malformed workflow payloads**
+   - The `execute` tool receives workflow definitions from the LLM
+   - Local client code previously forwarded these payloads without validating or normalizing JSON-string workflow bodies
+   - Errors like:
+     - `Expected a newline after line continuation character`
+     - `Expected '}', found ')'`
+     indicate malformed JSON generated before or during tool invocation, not an HTTP transport issue
+
+**Client-Side Fix Applied (`gcm_agent/mcp/client.py`):**
+- Added `_normalize_execute_arguments()` to:
+  - validate execute payload shape
+  - parse JSON strings under common wrapper keys (`workflow`, `input`, `payload`)
+  - reject malformed JSON early with actionable byte-position errors
+  - require a workflow object containing at least `tool_name`
+- Enhanced `execute_tool()` logging to record normalized payloads and failure context
+- Added targeted error enrichment for `policy_violations_dashboard` 405 failures so logs clearly indicate likely remote MCP server schema/method mismatch
+
+**What This Fix Does NOT Change:**
+- It does **not** change the HTTP method used for `policy_violations_dashboard`
+- That method is controlled by the remote GCM MCP server/tool schema, not by `GCMMCPClient`
+
+**Verification:**
+- `python -m py_compile gcm_agent/mcp/client.py` ✓
+- `python test_execute_tool_fix_unit.py` ✓
+- `python test_tuple_result_fix.py` ✓
+
+**Operational Recommendation:**
+- For `policy_violations_dashboard`, verify and correct the remote GCM MCP server tool mapping/schema for `/ibm/gempolicyengine/api/v1/violations/dashboards/policy-violations`
+- For discovery mode `execute`, keep prompts steering the LLM away from `execute` for simple retrieval queries and rely on the new client-side validation for malformed workflow payloads
+
 ### Fixed SSL Certificate Verification Error (2026-06-06 07:17 UTC)
 
 **Root Cause:**

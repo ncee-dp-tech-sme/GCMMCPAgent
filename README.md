@@ -482,6 +482,7 @@ The agent is designed for future integration with Watsonx Orchestrate:
 | "Need more steps" error | Increase max_iterations (default now 20) or disable discovery mode |
 | AttributeError: 'coroutine' object | Fixed in v2026-06-06 - update to latest version |
 | Discovery mode execute tool errors | Fixed in v2026-06-06 - LLM now calls tools directly for simple queries |
+| 405 Method Not Allowed errors | Server-side schema mismatch - check GCM MCP server tool mappings |
 
 ### Common Error Messages
 
