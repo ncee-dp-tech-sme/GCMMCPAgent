@@ -297,7 +297,26 @@ If your GCM or Keycloak servers use self-signed certificates, you can disable SS
 3. Save the configuration
 4. Re-initialize the agent
 
-**Note:** When SSL verification is disabled, the agent applies a process-wide SSL context workaround to handle self-signed certificates. This is logged with a warning message for transparency.
+**Note:** When SSL verification is disabled, the agent applies comprehensive SSL workarounds:
+- Modifies default SSL context to disable certificate verification
+- Monkey-patches both `httpx.AsyncClient` and `httpx.Client` to force `verify=False`
+- Sets environment variables to disable SSL verification
+- This affects all HTTPS connections in the process and is logged with a warning
+
+### GCM Hostname Configuration
+
+The GCM MCP server requires the actual hostname to construct internal API URLs. The agent handles this automatically:
+
+- **Automatic Extraction**: If you provide a full URL (e.g., `https://gcm.example.com:9443`), the agent extracts just the hostname (`gcm.example.com`)
+- **Direct Input**: You can also provide just the hostname directly
+- **Critical Header**: The hostname is passed via the `x-gcm-hostname` header to the MCP server
+- **Error Prevention**: Without this header, internal API calls fail with 500 errors using placeholder hostnames like `asset`
+
+**Example Configuration:**
+```
+GCM URL: https://gcm.apps.example.com:9443
+GCM Hostname: gcm.apps.example.com (or full URL - will be extracted automatically)
+```
 
 ### RBAC Enforcement
 

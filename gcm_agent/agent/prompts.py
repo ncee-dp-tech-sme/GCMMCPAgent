@@ -1,6 +1,9 @@
 """Prompt definitions module for system instructions and GCM-specific response guidance."""
 
+from datetime import datetime, timezone
+
 # Made with Bob
+# 2026-06-06 00:24 UTC - Added dynamic current date/time injection to fix date calculation issues
 # 2026-06-05 22:11 UTC - Initial implementation of system prompts for GCM agent
 
 # Base system prompt for GCM operations
@@ -65,11 +68,17 @@ def get_system_prompt(discovery_mode: bool = True) -> str:
         discovery_mode: Whether discovery mode is enabled
         
     Returns:
-        Complete system prompt
+        Complete system prompt with current date/time
     """
+    # Get current date/time in ISO 8601 UTC format
+    current_datetime = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    
+    # Build prompt with current date/time at the top
+    date_header = f"CURRENT DATE AND TIME: {current_datetime}\n\n"
     base = GCM_SYSTEM_PROMPT
     mode_specific = DISCOVERY_MODE_PROMPT if discovery_mode else STANDARD_MODE_PROMPT
-    return f"{base}\n\n{mode_specific}"
+    
+    return f"{date_header}{base}\n\n{mode_specific}"
 
 
 __all__ = [

@@ -1,6 +1,7 @@
 """MCP client and tool loader for GCM Agent."""
 
 # Made with Bob
+# 2026-06-06 00:27 UTC - Updated to store GCMAuthenticator and handle token refresh before MCP operations
 # 2026-06-05 22:00 UTC - Initial implementation of MCP exceptions and helper functions
 # 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
 
@@ -89,21 +90,23 @@ async def create_gcm_mcp_client(
     logger.info("Creating GCM MCP client")
     
     try:
-        # Step 1 & 2: Authenticate and get client factory
-        # get_client_factory handles the complete two-step auth flow internally
+        # Step 1 & 2: Authenticate and get client factory + authenticator
+        # get_client_factory now returns both factory and authenticator for token refresh
         logger.debug("Step 1-2: Authenticating and creating client factory")
-        client_factory = await get_client_factory(
+        client_factory, gcm_authenticator = await get_client_factory(
             keycloak_config, gcm_config, auth_config, password, client_secret, timeout=agent_config.timeout
         )
         
-        # Step 3: Create MCP client
+        # Step 3: Create MCP client with authenticator for token refresh
         logger.debug(f"Step 3: Creating MCP client with verify_ssl={gcm_config.verify_ssl}")
         mcp_client = GCMMCPClient(
             gcm_url=gcm_config.url,
+            gcm_hostname=gcm_config.hostname,
             client_factory=client_factory,
             discovery_mode=agent_config.discovery_mode,
             timeout=agent_config.timeout,
             verify_ssl=gcm_config.verify_ssl,
+            gcm_authenticator=gcm_authenticator,  # Pass authenticator for token refresh
         )
         
         # Step 4: Connect to MCP server

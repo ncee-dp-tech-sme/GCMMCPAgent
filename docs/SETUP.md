@@ -253,9 +253,15 @@ In the **Configuration** tab, under **🖥️ GCM Server**:
    Example: https://gcm.example.com
    ```
 
-2. **Hostname**: Enter the GCM server hostname
+2. **GCM Hostname**: Enter the GCM server hostname (just the hostname, not the full URL)
    ```
-   Example: gcm-server.example.com
+   Example: gcm.example.com
+   
+   Note: The agent automatically extracts the hostname if you provide a full URL.
+   - Input: https://gcm.apps.example.com:9443
+   - Extracted: gcm.apps.example.com
+   
+   This hostname is used by the MCP server to construct internal API URLs.
    ```
 
 3. **Keycloak Port**: Enter the Keycloak port (default: 443)

@@ -117,27 +117,67 @@ curl -k -X POST "https://gcm.example.com:443/auth/realms/master/protocol/openid-
 
 ---
 
-### Token Expiration
+### Automatic Token Refresh
 
-#### Symptom
+#### Overview
+The GCM Agent implements automatic OAuth2 token refresh to maintain uninterrupted operation. Tokens are automatically refreshed before expiration, eliminating the need for manual reinitialization.
+
+#### How It Works
+- **Token Expiration Tracking**: The system tracks token expiration time from Keycloak
+- **Proactive Refresh**: Tokens are refreshed 60 seconds before expiration
+- **Transparent Operation**: Token refresh happens automatically without user intervention
+- **Connection Maintenance**: MCP client reconnects seamlessly with the new token
+
+#### What This Fixes
+Previously, intermittent SSL/500 errors occurred after 5-15 minutes of operation when tokens expired. The automatic refresh mechanism resolves:
+- `[SSL: CERTIFICATE_VERIFY_FAILED]` errors after extended use
+- `500 Internal Server Error` responses from expired tokens
+- Connection drops requiring manual agent reinitialization
+
+#### Troubleshooting Token Refresh Failures
+
+**Symptom: Token refresh fails with authentication error**
 ```
-❌ Token expired: Please reinitialize the agent
+ERROR: Failed to refresh token: Authentication failed
 ```
 
-#### Solutions
+**Solutions:**
 
-**1. Reinitialize Agent**
-- Go to Chat tab
-- Click **🚀 Initialize Agent**
-- Wait for "✅ Agent Ready"
+1. **Verify Keycloak Connectivity**
+   - Ensure Keycloak server is accessible
+   - Check `KEYCLOAK_PORT` environment variable (default: 443)
+   - Verify network connectivity to Keycloak endpoint
 
-**2. Adjust Token Lifetime (GCM Admin)**
-- Increase token lifetime in Keycloak settings
-- Typical values: 300-3600 seconds
+2. **Check Credentials**
+   - Verify `CLIENT_ID` and `CLIENT_SECRET` are still valid
+   - Ensure `USERNAME` and `PASSWORD` have not changed
+   - Confirm credentials have not expired in Keycloak
 
-**3. Implement Auto-Refresh (Future Enhancement)**
-- Currently, manual reinitialization is required
-- Auto-refresh is planned for future releases
+3. **Review Token Lifetime Settings**
+   - Check Keycloak token lifetime configuration
+   - Ensure tokens have sufficient lifetime (recommended: 300+ seconds)
+   - Verify refresh token settings in Keycloak realm
+
+4. **Reinitialize Agent (Last Resort)**
+   - Go to Chat tab
+   - Click **🚀 Initialize Agent**
+   - Wait for "✅ Agent Ready"
+   - This obtains a fresh token and resets the refresh cycle
+
+**Symptom: Frequent token refreshes in logs**
+```
+INFO: Token expiring soon, refreshing...
+INFO: Token refreshed successfully
+```
+
+**This is normal behavior** when:
+- Token lifetime is set very short (< 300 seconds)
+- Agent has been running for extended periods
+- Multiple operations are performed in quick succession
+
+**To reduce refresh frequency:**
+- Increase token lifetime in Keycloak (recommended: 600-3600 seconds)
+- This is a Keycloak admin configuration change
 
 ---
 
@@ -253,6 +293,56 @@ After installing the CA certificate or disabling SSL verification:
 - **Expected**: This warning appears when SSL verification is disabled
 - **Solution**: This is informational and can be ignored in development/testing
 - For production, install proper CA certificates to eliminate the warning
+
+#### Technical Details: SSL Certificate Verification Implementation
+
+**Problem:**
+When using self-signed certificates, you may encounter an SSL certificate verification error during agent initialization or tool execution:
+
+```
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate (_ssl.c:1004)
+```
+
+**Root Cause:**
+- SSL verification is enabled by default in the httpx AsyncClient
+- Self-signed certificates are not trusted by the system's certificate store
+- The MCP library may pass `verify` parameters that conflict with custom SSL settings
+
+**How the Fix Works:**
+
+The [`GCMAuthenticator`](gcm_agent/auth/gcm_auth.py:181) implements a custom `_client_factory()` that:
+
+1. **Pops the 'verify' kwarg** before creating AsyncClient to prevent conflicts:
+   ```python
+   # CRITICAL: Pop 'verify' kwarg first to avoid conflicts
+   kwargs.pop("verify", None)
+   ```
+
+2. **Applies the verify_ssl setting** explicitly when creating the client:
+   ```python
+   client = httpx.AsyncClient(
+       headers=merged_headers,
+       verify=verify_ssl,  # User-controlled SSL verification
+       timeout=timeout,
+       trust_env=False,
+       follow_redirects=True,
+       **kwargs,
+   )
+   ```
+
+**Configuration:**
+
+Users control SSL verification via the `verify_ssl` parameter in GCMAuthenticator:
+- **`verify_ssl=True`** (default): Enforces SSL certificate verification (production)
+- **`verify_ssl=False`**: Disables SSL verification (development/testing with self-signed certs)
+
+This setting is exposed in the UI Configuration tab as the "Verify SSL" checkbox for both Keycloak and GCM Server connections.
+
+**Why This Approach:**
+- Prevents duplicate keyword argument errors when MCP library passes verify parameters
+- Allows independent SSL verification control for Keycloak and GCM Server
+- Maintains security by default while supporting development environments
+- Ensures the user's SSL preference takes precedence over library defaults
 
 ---
 
@@ -419,6 +509,80 @@ except Exception as e:
 
 ---
 
+### Missing GCM_HOSTNAME Environment Variable
+
+#### Symptom
+```
+❌ Error calling tool 'fetch_detailed_asset_list_by_crypto_objects': 
+   Server error '500 Internal Server Error' for url 'https://asset:9443/...'
+```
+
+The error shows a placeholder hostname `asset` instead of your actual GCM hostname in the URL.
+
+#### Cause
+The MCP server requires the `x-gcm-hostname` header to construct internal API URLs. When the `GCM_HOSTNAME` environment variable is not set in your `.env` file, the system uses a placeholder value (`asset`), causing 500 Internal Server Errors.
+
+#### Solutions
+
+**1. Set GCM_HOSTNAME in .env File**
+
+Add the hostname to your `.env` file:
+```bash
+# .env file
+GCM_HOSTNAME=gcm.example.com
+```
+
+**Important:** Use ONLY the hostname, not the full URL:
+```
+✅ Correct: GCM_HOSTNAME=gcm.example.com
+✅ Correct: GCM_HOSTNAME=gcm.apps.example.com
+❌ Wrong: GCM_HOSTNAME=https://gcm.example.com:9443
+❌ Wrong: GCM_HOSTNAME=https://gcm.example.com
+❌ Wrong: GCM_HOSTNAME=gcm.example.com:9443
+```
+
+**2. Verify .env File Location**
+```bash
+# Check if .env exists in project root
+ls -la .env
+
+# If missing, copy from example
+cp .env.example .env
+
+# Edit with your values
+nano .env  # or use your preferred editor
+```
+
+**3. Alternative: Use Configuration UI**
+
+If you prefer not to use `.env` files:
+- Go to Configuration tab
+- Enter the hostname in the "GCM Hostname" field
+- Use hostname only (e.g., `gcm.example.com`)
+- Save configuration
+- Reinitialize agent
+
+**4. Verify Configuration**
+
+Check logs for correct hostname:
+```
+DEBUG | GCMMCPClient initialized for https://gcm.example.com (hostname=gcm.example.com)
+```
+
+If you see `hostname=asset`, the configuration was not loaded correctly.
+
+**5. Restart Application**
+
+After updating `.env`:
+```bash
+# Stop the application (Ctrl+C)
+# Restart
+python app.py
+```
+
+---
+
+
 ## MCP Connection Issues
 
 ### Connection Timeout
@@ -549,6 +713,87 @@ asyncio.run(test_discovery())
 ```
 
 ---
+### 500 Internal Server Error on Tool Calls
+
+#### Symptom
+```
+❌ Error calling tool 'fetch_detailed_asset_list_by_crypto_objects': 
+   Server error '500 Internal Server Error' for url 'https://asset:9443/...'
+```
+
+#### Cause
+The GCM MCP server is using a placeholder hostname (`asset`) instead of the actual GCM hostname when constructing internal API URLs.
+
+#### Solutions
+
+**1. Verify Hostname Configuration**
+- Check that the GCM Hostname field contains the actual hostname
+- The hostname should be just the hostname, not the full URL
+- Example: `gcm.example.com` (not `https://gcm.example.com:9443`)
+
+**2. Automatic Hostname Extraction**
+The agent automatically extracts the hostname if you provide a full URL:
+- Input: `https://gcm.apps.example.com:9443`
+- Extracted: `gcm.apps.example.com`
+
+**3. Verify x-gcm-hostname Header**
+Check logs for:
+```
+DEBUG | GCMMCPClient initialized for https://gcm.example.com (hostname=gcm.example.com)
+```
+
+**4. Reconfigure if Needed**
+- Go to Configuration tab
+- Update GCM Hostname field with correct value
+- Save configuration
+- Reinitialize agent
+
+---
+
+### SSL Certificate Verification Errors During Tool Execution
+
+#### Symptom
+```
+❌ Request error (ConnectError): [SSL: CERTIFICATE_VERIFY_FAILED] 
+   certificate verify failed: self-signed certificate
+```
+
+#### Cause
+The MCP server makes internal HTTPS calls to GCM APIs that fail SSL verification with self-signed certificates.
+
+#### Solutions
+
+**1. Disable SSL Verification (Development/Testing)**
+- In Configuration tab, uncheck "Verify SSL" for GCM Server
+- Save configuration
+- Reinitialize agent
+- The agent applies comprehensive SSL workarounds
+
+**2. Verify SSL Workaround Applied**
+Check logs for:
+```
+WARNING | Applying SSL verification workaround for self-signed certificates
+DEBUG   | Monkey-patched httpx.AsyncClient and httpx.Client to force verify=False
+```
+
+**3. If SSL Errors Persist**
+- Restart the application completely
+- The SSL workaround must be applied before any HTTP clients are created
+- Check that `verify_ssl=False` in configuration
+
+**4. Production Solution**
+Install proper SSL certificates:
+```bash
+# Add CA certificate to system trust store
+sudo cp ca-cert.pem /usr/local/share/ca-certificates/gcm-ca.crt
+sudo update-ca-certificates
+
+# Or use environment variable
+export REQUESTS_CA_BUNDLE=/path/to/ca-bundle.crt
+```
+
+---
+
 
 ## Agent Execution Errors
 

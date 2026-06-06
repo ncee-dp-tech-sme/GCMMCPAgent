@@ -9,8 +9,14 @@ Documentation-only repository - contains IBM Guardium Cryptography Manager MCP S
 
 ### GCM MCP Server Authentication (Two-Step Flow)
 - **Critical**: Must obtain OAuth2 token from Keycloak FIRST, then authorize with GCM user management endpoint
-- Token must be injected into httpx.AsyncClient headers via custom `_client_factory()` 
+- Token must be injected into httpx.AsyncClient headers via custom `_client_factory()`
 - Both steps required - missing either causes silent auth failure
+
+### GCM Hostname Header Requirement
+- **Critical**: MCP server requires `x-gcm-hostname` header to construct internal API URLs
+- Without this header, internal calls use placeholder hostname (e.g., `asset`) causing 500 errors
+- Must pass actual GCM hostname (not full URL) in MCP client headers
+- Example: `"x-gcm-hostname": "gcm.example.com"` for URL `https://gcm.example.com:9443`
 
 ### MCP Client Configuration Gotchas
 - `langchain-mcp-adapters` requires `streamable_http` transport for remote GCM server
@@ -44,6 +50,16 @@ Documentation-only repository - contains IBM Guardium Cryptography Manager MCP S
 - Keycloak: KEYCLOAK_PORT (default 443), REALM (default "master")
 - WatsonX: LLM_WATSONX_API_KEY, LLM_WATSONX_PROJECT_ID, WATSONX_MODEL
 - Slack (if used): SLACK_BOT_TOKEN, SLACK_TEAM_ID
+
+### Token Lifecycle Management
+- **Critical**: OAuth2 tokens expire and must be refreshed to maintain operation
+- Token expiration tracked in `GCMAuthenticator` with 60-second buffer before expiry
+- Automatic refresh via `_check_and_refresh_token()` called before all MCP operations
+- Authenticator instance passed through stack: `get_client_factory()` → `GCMMCPClient.__init__()`
+- `_client_factory()` uses current token from authenticator (not cached at factory creation)
+- When token expires, `reconnect_with_new_factory()` recreates MCP client with fresh token
+- Pattern prevents intermittent SSL/500 errors after 5-15 minutes of operation
+- Token refresh is transparent - no user intervention required
 
 ### RBAC Configuration (charts/aim-mcp-server/values.yaml)
 - `default_behaviour: enabled` - all tools visible by default

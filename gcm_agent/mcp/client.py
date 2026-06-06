@@ -1,6 +1,9 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-06 00:28 UTC - Added token refresh mechanism and reconnection support to fix intermittent SSL/500 errors
+# 2026-06-05 23:51 UTC - Enhanced SSL workaround to patch both AsyncClient and sync Client, auto-extract hostname from URL
+# 2026-06-05 23:44 UTC - Added x-gcm-hostname header to fix 500 errors on asset inventory API calls
 # 2026-06-05 22:48 UTC - Added environment variable SSL workaround
 # 2026-06-05 22:43 UTC - Added SSL verification workaround for self-signed certificates
 # 2026-06-05 22:01 UTC - Initial implementation of GCMMCPClient with streamable_http transport
@@ -43,29 +46,46 @@ class GCMMCPClient:
     def __init__(
         self,
         gcm_url: str,
+        gcm_hostname: str,
         client_factory: Callable,
         discovery_mode: bool = True,
         timeout: int = 300,
         verify_ssl: bool = True,
+        gcm_authenticator: Optional[Any] = None,
     ):
         """
         Initialize GCM MCP Client.
         
         Args:
             gcm_url: GCM server URL (e.g., https://gcm.example.com)
+            gcm_hostname: GCM server hostname (used for internal API calls)
+                Can be full URL or just hostname - will extract hostname automatically
             client_factory: Factory function from GCMAuthenticator._client_factory()
             discovery_mode: Enable discovery mode (default True)
                 - True: Returns 4 discovery tools + 1 execute tool
                 - False: Returns all 26 application tools
             timeout: Request timeout in seconds (default 300)
             verify_ssl: Verify SSL certificates (default True)
+            gcm_authenticator: Optional GCMAuthenticator instance for token refresh
         """
         self.gcm_url = gcm_url.rstrip("/")
+        self.logger = get_mcp_logger()
+        
+        # Extract hostname from URL if full URL was provided
+        # e.g., "https://gcm.example.com:9443" -> "gcm.example.com"
+        if gcm_hostname.startswith(("http://", "https://")):
+            from urllib.parse import urlparse
+            parsed = urlparse(gcm_hostname)
+            self.gcm_hostname = parsed.hostname or gcm_hostname
+            self.logger.debug(f"Extracted hostname '{self.gcm_hostname}' from URL '{gcm_hostname}'")
+        else:
+            self.gcm_hostname = gcm_hostname
+        
         self.client_factory = client_factory
         self.discovery_mode = discovery_mode
         self.timeout = timeout
         self.verify_ssl = verify_ssl
-        self.logger = get_mcp_logger()
+        self.gcm_authenticator = gcm_authenticator
         
         # Connection state
         self._connected = False
@@ -75,9 +95,43 @@ class GCMMCPClient:
         self._ssl_context_applied = False
         
         self.logger.debug(
-            f"GCMMCPClient initialized for {gcm_url} "
+            f"GCMMCPClient initialized for {gcm_url} (hostname={gcm_hostname}) "
             f"(discovery_mode={discovery_mode}, timeout={timeout}s, verify_ssl={verify_ssl})"
         )
+    
+    async def _check_and_refresh_token(self) -> None:
+        """
+        Check if token is expired and refresh if needed.
+        
+        This method should be called before any MCP operation to ensure
+        the token is valid. If the token is expired, it will refresh it
+        and recreate the client factory.
+        """
+        if not self.gcm_authenticator:
+            # No authenticator available, cannot refresh
+            return
+        
+        if self.gcm_authenticator.is_token_expired():
+            self.logger.warning("Token expired, refreshing...")
+            
+            try:
+                # Refresh the token
+                new_token = await self.gcm_authenticator.refresh_token()
+                
+                # Create new client factory with refreshed token
+                self.client_factory = self.gcm_authenticator._client_factory(
+                    new_token, self.timeout
+                )
+                
+                # Reconnect with new factory
+                await self.reconnect_with_new_factory()
+                
+                self.logger.info("Token refreshed and client reconnected successfully")
+                
+            except Exception as e:
+                self.logger.error(f"Failed to refresh token: {e}")
+                # Don't raise - let the operation proceed and fail naturally
+                # This allows for better error messages from the actual operation
     
     async def connect(self) -> None:
         """
@@ -99,6 +153,9 @@ class GCMMCPClient:
         
         self.logger.info(f"Connecting to GCM MCP server at {self.gcm_url}")
         
+        # Check and refresh token before connecting
+        await self._check_and_refresh_token()
+        
         # Apply SSL workaround if SSL verification is disabled
         if not self.verify_ssl and not self._ssl_context_applied:
             self._apply_ssl_workaround()
@@ -114,7 +171,8 @@ class GCMMCPClient:
                         "transport": "streamable_http",
                         "url": f"{self.gcm_url}/ibm/mcp/mcp",
                         "headers": {
-                            "x-mcp-enable-discovery": "true" if self.discovery_mode else "false"
+                            "x-mcp-enable-discovery": "true" if self.discovery_mode else "false",
+                            "x-gcm-hostname": self.gcm_hostname
                         },
                         "httpx_client_factory": self.client_factory,
                         "timeout": self.timeout,
@@ -175,6 +233,8 @@ class GCMMCPClient:
         In discovery mode, returns 5 tools (search, get_schema, list_tools,
         get_tags, execute). In standard mode, returns all 26 application tools.
         
+        Checks token expiration before fetching tools.
+        
         Returns:
             List of LangChain Tool objects
         
@@ -185,6 +245,9 @@ class GCMMCPClient:
         if not self._connected or not self._mcp_client:
             from gcm_agent.mcp import MCPConnectionError
             raise MCPConnectionError("Not connected to MCP server")
+        
+        # Check and refresh token before operation
+        await self._check_and_refresh_token()
         
         # Return cached tools if available
         if self._tools_cache is not None:
@@ -220,6 +283,8 @@ class GCMMCPClient:
         """
         Execute a tool on the MCP server.
         
+        Checks token expiration before executing the tool.
+        
         Args:
             tool_name: Name of the tool to execute
             arguments: Tool arguments as dictionary
@@ -235,6 +300,9 @@ class GCMMCPClient:
         if not self._connected or not self._mcp_client:
             from gcm_agent.mcp import MCPConnectionError
             raise MCPConnectionError("Not connected to MCP server")
+        
+        # Check and refresh token before operation
+        await self._check_and_refresh_token()
         
         self.logger.info(f"Executing tool '{tool_name}' with arguments: {arguments}")
         
@@ -340,20 +408,29 @@ class GCMMCPClient:
             os.environ['SSL_CERT_FILE'] = ''
             self.logger.debug("Set SSL-related environment variables to disable verification")
             
-            # Method 3: Monkey-patch httpx.AsyncClient to force verify=False
+            # Method 3: Monkey-patch httpx.AsyncClient and Client to force verify=False
             try:
                 import httpx
-                original_init = httpx.AsyncClient.__init__
                 
-                def patched_init(self, *args, **kwargs):
+                # Patch AsyncClient
+                original_async_init = httpx.AsyncClient.__init__
+                def patched_async_init(self, *args, **kwargs):
                     # Force verify=False for all AsyncClient instances
                     kwargs['verify'] = False
-                    return original_init(self, *args, **kwargs)
+                    return original_async_init(self, *args, **kwargs)
+                httpx.AsyncClient.__init__ = patched_async_init
                 
-                httpx.AsyncClient.__init__ = patched_init
-                self.logger.debug("Monkey-patched httpx.AsyncClient to force verify=False")
+                # Also patch sync Client (in case MCP uses it)
+                original_sync_init = httpx.Client.__init__
+                def patched_sync_init(self, *args, **kwargs):
+                    # Force verify=False for all Client instances
+                    kwargs['verify'] = False
+                    return original_sync_init(self, *args, **kwargs)
+                httpx.Client.__init__ = patched_sync_init
+                
+                self.logger.debug("Monkey-patched httpx.AsyncClient and httpx.Client to force verify=False")
             except Exception as e:
-                self.logger.warning(f"Could not monkey-patch httpx.AsyncClient: {e}")
+                self.logger.warning(f"Could not monkey-patch httpx clients: {e}")
             
             # Method 4: Monkey-patch MCP's create_mcp_http_client function
             try:
@@ -393,6 +470,30 @@ class GCMMCPClient:
         except Exception as e:
             self.logger.error(f"Failed to apply SSL workaround: {e}")
             # Don't raise - let the connection attempt proceed
+    
+    async def reconnect_with_new_factory(self) -> None:
+        """
+        Reconnect to MCP server with a new client factory.
+        
+        This is used after token refresh to recreate the MCP client
+        with the new authentication token. Preserves connection state
+        and clears tool cache to force refetch with new credentials.
+        
+        Raises:
+            MCPConnectionError: If reconnection fails
+        """
+        self.logger.info("Reconnecting to MCP server with refreshed token")
+        
+        # Disconnect current client
+        await self.disconnect()
+        
+        # Brief delay before reconnecting
+        await asyncio.sleep(0.5)
+        
+        # Reconnect with new factory (which has the refreshed token)
+        await self.connect()
+        
+        self.logger.info("Successfully reconnected with refreshed token")
     
     async def reconnect(self) -> None:
         """
