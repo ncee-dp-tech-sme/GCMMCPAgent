@@ -5,10 +5,51 @@ Main entry point for the GCM Agent with configuration and chat interfaces.
 """
 
 # Made with Bob
+# 2026-06-06 01:08 UTC - Moved SSL bypass to application startup BEFORE any imports to fix SSL verification errors
 # 2026-06-05 22:16 UTC - Initial implementation of main application entry point
 # 2026-06-05 22:48 UTC - Removed show_api parameter (not supported in Gradio 6.0), changed server to listen on 127.0.0.1 for security
 # 2026-06-05 21:38 UTC - Added dotenv loading for environment variables including logging configuration
 
+# ============================================================================
+# SSL BYPASS - MUST BE APPLIED AT STARTUP BEFORE ANY OTHER IMPORTS
+# ============================================================================
+# This section patches httpx.AsyncClient at the very start of the application
+# to ensure ALL httpx clients (including those created by MCP library) have
+# SSL verification disabled for self-signed certificates.
+# This MUST be done before importing any gcm_agent modules or MCP libraries.
+# ============================================================================
+
+import httpx
+import ssl
+
+# Store original httpx.AsyncClient.__init__ before any modifications
+_original_httpx_init = httpx.AsyncClient.__init__
+
+
+def _global_ssl_bypass_init(self, *args, **kwargs):
+    """
+    Global SSL bypass for self-signed certificates.
+    
+    Patches httpx.AsyncClient.__init__ to disable SSL verification by default.
+    If verify is not explicitly set to True, it will be set to False.
+    """
+    # If verify not explicitly set to True, disable it
+    if 'verify' not in kwargs:
+        kwargs['verify'] = False
+    elif kwargs.get('verify') is None:
+        kwargs['verify'] = False
+    
+    return _original_httpx_init(self, *args, **kwargs)
+
+
+# Apply patch GLOBALLY before any other imports
+httpx.AsyncClient.__init__ = _global_ssl_bypass_init
+
+# Disable SSL warnings
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# NOW import everything else - MCP and httpx clients will use our patched version
 import os
 from pathlib import Path
 from dotenv import load_dotenv

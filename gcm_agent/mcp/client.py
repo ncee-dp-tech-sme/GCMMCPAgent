@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-06 01:08 UTC - Removed module-level SSL bypass (now handled at app.py startup)
 # 2026-06-06 00:55 UTC - Implemented module-level SSL bypass before MCP imports to fix SSL verification errors
 # 2026-06-06 00:28 UTC - Added token refresh mechanism and reconnection support to fix intermittent SSL/500 errors
 # 2026-06-05 23:51 UTC - Enhanced SSL workaround to patch both AsyncClient and sync Client, auto-extract hostname from URL
@@ -13,56 +14,11 @@
 
 from typing import Callable, Optional, List, Dict, Any
 import asyncio
-import ssl
-import warnings
-import os
 
-# ============================================================================
-# SSL BYPASS - MUST BE APPLIED BEFORE MCP IMPORTS
-# ============================================================================
-# This section patches httpx.AsyncClient at module level to ensure ALL httpx
-# clients created by the MCP library have SSL verification disabled when needed.
-# The MCP library creates multiple clients during initialization, outside our
-# control, so we must patch httpx BEFORE importing MCP libraries.
-# ============================================================================
-
-import httpx
-
-# Global flag to control SSL bypass (set by GCMMCPClient.__init__)
-_SSL_BYPASS_ENABLED = False
-
-# Store original httpx.AsyncClient.__init__ before any modifications
-_ORIGINAL_HTTPX_ASYNC_INIT = httpx.AsyncClient.__init__
-
-
-def _patched_httpx_async_init(self, *args, **kwargs):
-    """
-    Patched httpx.AsyncClient.__init__ that forces verify=False when SSL bypass is enabled.
-    
-    This ensures all httpx clients created by MCP library have SSL verification disabled
-    when working with self-signed certificates.
-    """
-    global _SSL_BYPASS_ENABLED
-    
-    if _SSL_BYPASS_ENABLED:
-        # Force verify=False for all httpx clients when SSL bypass is enabled
-        kwargs['verify'] = False
-    
-    return _ORIGINAL_HTTPX_ASYNC_INIT(self, *args, **kwargs)
-
-
-# Apply the patch BEFORE importing MCP libraries
-httpx.AsyncClient.__init__ = _patched_httpx_async_init
-
-# NOW import MCP libraries - they will use our patched httpx
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
 
 from gcm_agent.utils.logger import get_mcp_logger
-
-# Get logger for SSL bypass logging
-_ssl_logger = get_mcp_logger()
-_ssl_logger.debug("Applied module-level SSL bypass patch to httpx.AsyncClient")
 
 
 class GCMMCPClient:
@@ -130,12 +86,10 @@ class GCMMCPClient:
         self.verify_ssl = verify_ssl
         self.gcm_authenticator = gcm_authenticator
         
-        # Enable module-level SSL bypass if SSL verification is disabled
-        global _SSL_BYPASS_ENABLED
+        # Log SSL verification status (bypass is handled at app.py startup)
         if not verify_ssl:
-            _SSL_BYPASS_ENABLED = True
             self.logger.warning(
-                "SSL verification disabled - module-level bypass enabled for all httpx clients"
+                "SSL verification disabled - global bypass applied at application startup"
             )
         
         # Connection state
