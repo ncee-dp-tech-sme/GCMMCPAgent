@@ -283,8 +283,8 @@ def create_config_ui() -> gr.Blocks:
             )
             keycloak_verify_ssl = gr.Checkbox(
                 label="Verify SSL",
-                value=True,
-                info="Verify SSL certificates for Keycloak (recommended)"
+                value=False,
+                info="Verify SSL certificates for Keycloak (disabled by default for self-signed certs)"
             )
         
         with gr.Tab("🖥️ GCM Server"):
@@ -301,8 +301,8 @@ def create_config_ui() -> gr.Blocks:
             )
             gcm_verify_ssl = gr.Checkbox(
                 label="Verify SSL",
-                value=True,
-                info="Verify SSL certificates for GCM (recommended)"
+                value=False,
+                info="Verify SSL certificates for GCM (disabled by default for self-signed certs)"
             )
         
         with gr.Tab("🔐 Authentication"):
