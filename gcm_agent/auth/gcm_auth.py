@@ -30,7 +30,7 @@ class GCMAuthenticator:
         self,
         gcm_url: str,
         hostname: str,
-        verify_ssl: bool = True,
+        verify_ssl: bool = False,
     ):
         """
         Initialize GCM authenticator.

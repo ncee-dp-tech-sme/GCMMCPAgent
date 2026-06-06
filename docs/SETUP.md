@@ -718,7 +718,7 @@ After successful setup:
 1. **Read the User Guide**: [`USER_GUIDE.md`](USER_GUIDE.md) for usage instructions
 2. **Test Basic Operations**: Try listing keys, querying information
 3. **Explore Features**: Test discovery mode, export conversations
-4. **Review Security**: Ensure SSL verification is enabled for production
+4. **Review Security**: SSL verification is disabled by default; enable for production with valid certificates
 5. **Monitor Performance**: Adjust settings based on your needs
 
 For ongoing issues, see [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).

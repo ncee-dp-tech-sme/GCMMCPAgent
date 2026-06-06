@@ -57,7 +57,7 @@ class GCMMCPClient:
         client_factory: Callable,
         discovery_mode: bool = True,
         timeout: int = 300,
-        verify_ssl: bool = True,
+        verify_ssl: bool = False,
         gcm_authenticator: Optional[Any] = None,
     ):
         """

@@ -94,13 +94,13 @@ Configure your connection to the Keycloak authentication server:
 | **Keycloak URL** | Full URL to your Keycloak server | `https://keycloak.example.com` |
 | **Keycloak Port** | Port for Keycloak server | `443` (default) |
 | **Realm** | Keycloak realm name | `master` (default) |
-| **Verify SSL** | Enable SSL certificate verification for Keycloak | ✅ Enabled (recommended) |
+| **Verify SSL** | Enable SSL certificate verification for Keycloak | ⚠️ Disabled (default for self-signed certs) |
 
 > **Note:** The Keycloak URL is used for OAuth2 token authentication.
 
 **SSL Verification for Keycloak:**
-- ✅ **Enabled (Recommended)**: Validates Keycloak server certificates against trusted CAs
-- ⚠️ **Disabled (Self-Signed Certs)**: Uncheck for development/testing with self-signed certificates
+- ⚠️ **Disabled (Default)**: SSL verification disabled by default for development/testing with self-signed certificates
+- ✅ **Enabled (Production)**: Check to validate Keycloak server certificates against trusted CAs
 - When disabled, a warning is logged and SSL verification is bypassed for Keycloak connections
 
 #### 🖥️ GCM Server Settings
@@ -111,13 +111,13 @@ Configure your connection to the GCM MCP server:
 |-------|-------------|---------|
 | **GCM URL** | Full URL to your GCM server | `https://gcm.example.com` |
 | **Hostname** | GCM server hostname | `gcm-server` |
-| **Verify SSL** | Enable SSL certificate verification for GCM | ✅ Enabled (recommended) |
+| **Verify SSL** | Enable SSL certificate verification for GCM | ⚠️ Disabled (default for self-signed certs) |
 
 > **Note:** The GCM URL is used for both MCP operations and user management authorization. The `/ibm/mcp/mcp` path is added automatically.
 
 **SSL Verification for GCM:**
-- ✅ **Enabled (Recommended)**: Validates GCM server certificates against trusted CAs
-- ⚠️ **Disabled (Self-Signed Certs)**: Uncheck for development/testing with self-signed certificates
+- ⚠️ **Disabled (Default)**: SSL verification disabled by default for development/testing with self-signed certificates
+- ✅ **Enabled (Production)**: Check to validate GCM server certificates against trusted CAs
 - When disabled, applies a process-wide SSL context workaround to handle self-signed certificates
 - **Security Warning**: Disabling SSL verification affects all HTTPS connections in the process
 
@@ -129,13 +129,14 @@ If you encounter SSL certificate verification errors like:
 ```
 
 **Solution:**
+SSL verification is disabled by default. If you have valid certificates and want to enable verification:
 1. Go to the **⚙️ Configuration** tab
-2. Uncheck the **"Verify SSL"** checkbox for the affected server (Keycloak or GCM)
+2. Check the **"Verify SSL"** checkbox for the affected server (Keycloak or GCM)
 3. Click **💾 Save Configuration**
 4. Return to the **💬 Chat** tab
 5. Click **🚀 Initialize Agent** to apply the new settings
 
-**Note:** SSL verification settings are independent for Keycloak and GCM, allowing you to disable verification for one server while keeping it enabled for the other.
+**Note:** SSL verification settings are independent for Keycloak and GCM, allowing you to enable verification for one server while keeping it disabled for the other.
 
 #### 🔐 Authentication Settings
 

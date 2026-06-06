@@ -39,7 +39,7 @@ class KeycloakConfig(BaseModel):
     url: str = Field(..., description="Keycloak server URL (e.g., https://keycloak.example.com)")
     port: int = Field(default=443, ge=1, le=65535, description="Keycloak server port")
     realm: str = Field(default="master", description="Keycloak realm name")
-    verify_ssl: bool = Field(default=True, description="Verify SSL certificates for Keycloak")
+    verify_ssl: bool = Field(default=False, description="Verify SSL certificates for Keycloak")
 
     @validator("url")
     def validate_url(cls, v):
@@ -58,7 +58,7 @@ class GCMServerConfig(BaseModel):
     
     url: str = Field(..., description="GCM server URL (e.g., https://gcm.example.com)")
     hostname: str = Field(..., description="GCM server hostname")
-    verify_ssl: bool = Field(default=True, description="Verify SSL certificates for GCM")
+    verify_ssl: bool = Field(default=False, description="Verify SSL certificates for GCM")
 
     @validator("url")
     def validate_url(cls, v):
@@ -109,7 +109,7 @@ class WatsonXConfig(BaseModel):
         default="ibm/granite-13b-chat-v2",
         description="WatsonX model identifier"
     )
-    verify_ssl: bool = Field(default=True, description="Verify SSL certificates for WatsonX")
+    verify_ssl: bool = Field(default=False, description="Verify SSL certificates for WatsonX")
 
     @validator("url")
     def validate_url(cls, v):

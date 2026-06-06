@@ -216,7 +216,7 @@ For development and testing environments with self-signed certificates:
 - All HTTPS connections in the process will bypass certificate verification
 - This is safe for development/testing but should not be used in production
 
-> **Security Warning:** Disabling SSL verification affects all HTTPS connections in the process. Only use this for development/testing environments with self-signed certificates. Never disable SSL verification in production.
+> **Security Note:** SSL verification is disabled by default to support development/testing with self-signed certificates. For production environments with valid certificates, enable SSL verification in the configuration.
 
 #### Production Solutions
 
@@ -286,8 +286,8 @@ After installing the CA certificate or disabling SSL verification:
 
 **Issue: Different SSL settings needed for Keycloak vs GCM**
 - **Solution**: The agent supports independent SSL verification settings
-- Uncheck SSL verification only for the server with self-signed certificates
-- Keep SSL verification enabled for servers with valid certificates
+- SSL verification is disabled by default for both servers
+- Enable SSL verification for servers with valid certificates in production
 
 **Issue: Warning about unverified HTTPS requests**
 - **Expected**: This warning appears when SSL verification is disabled

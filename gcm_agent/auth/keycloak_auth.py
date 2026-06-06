@@ -30,7 +30,7 @@ class KeycloakAuthenticator:
         username: str,
         password: str,
         client_secret: str,
-        verify_ssl: bool = True,
+        verify_ssl: bool = False,
     ):
         """
         Initialize Keycloak authenticator.
