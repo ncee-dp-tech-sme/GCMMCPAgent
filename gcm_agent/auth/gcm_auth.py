@@ -365,11 +365,11 @@ class GCMAuthenticator:
                 """Log outgoing HTTP requests with masked headers."""
                 # Mask Authorization header in logs
                 logged_headers = dict(request.headers)
-                if "authorization" in logged_headers:
-                    auth_value = logged_headers["authorization"]
+                if "Authorization" in logged_headers:
+                    auth_value = logged_headers["Authorization"]
                     if auth_value.startswith("Bearer "):
                         token = auth_value[7:]  # Remove "Bearer " prefix
-                        logged_headers["authorization"] = f"Bearer {mask_token(token)}"
+                        logged_headers["Authorization"] = f"Bearer {mask_token(token)}"
                 
                 logger.debug(
                     f"HTTP Request: {request.method} {request.url} | "
