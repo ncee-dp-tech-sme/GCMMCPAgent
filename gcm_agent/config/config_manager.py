@@ -4,6 +4,7 @@
 # 2026-06-05 19:53 UTC - Initial implementation of configuration manager with Pydantic models
 # 2026-06-05 21:02 UTC - Separated Keycloak configuration and added independent SSL verification
 # 2026-06-05 21:50 UTC - Added WatsonX URL configuration field
+# 2026-06-06 02:43 UTC - Added WatsonX SSL verification configuration support
 
 import json
 import threading
@@ -107,6 +108,7 @@ class WatsonXConfig(BaseModel):
         default="ibm/granite-13b-chat-v2",
         description="WatsonX model identifier"
     )
+    verify_ssl: bool = Field(default=True, description="Verify SSL certificates for WatsonX")
 
     @validator("url")
     def validate_url(cls, v):

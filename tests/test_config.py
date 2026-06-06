@@ -225,5 +225,17 @@ class TestConfigManager:
         assert WatsonXConfig is not None
         assert AgentConfig is not None
 
+    def test_watsonx_config_verify_ssl_field(self):
+        """Test that WatsonXConfig supports SSL verification configuration."""
+        from gcm_agent.config.config_manager import WatsonXConfig
+        
+        config = WatsonXConfig(
+            project_id="test-project-id",
+            model="ibm/granite-13b-chat-v2",
+            verify_ssl=False,
+        )
+        
+        assert config.verify_ssl is False
+
 
 # Made with Bob

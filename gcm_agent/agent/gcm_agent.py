@@ -1,10 +1,12 @@
 """Main LangGraph agent module for coordinating prompts, tools, and GCM-specific workflows."""
 
 # Made with Bob
+# 2026-06-06 01:30 UTC - Added error handling in stream_chat to prevent TaskGroup exceptions
 # 2026-06-05 22:13 UTC - Added tool limiting to respect WatsonX 128 tool limit
 # 2026-06-05 22:11 UTC - Initial implementation of LangGraph agent following AGENTS.md patterns
 # 2026-06-05 21:51 UTC - Added WatsonX URL parameter to LLM initialization
 # 2026-06-05 22:05 UTC - Fixed to use ChatWatsonx instead of WatsonxLLM for tool binding support
+# 2026-06-06 02:43 UTC - Added WatsonX SSL verification configuration to LLM initialization
 
 from typing import List, Optional, AsyncGenerator
 from datetime import datetime
@@ -92,13 +94,17 @@ class GCMAgent:
         Returns:
             Configured ChatWatsonx instance (supports tool calling)
         """
-        self.logger.debug(f"Initializing ChatWatsonx with model: {self.watsonx_config.model} at {self.watsonx_config.url}")
+        self.logger.debug(
+            f"Initializing ChatWatsonx with model: {self.watsonx_config.model} "
+            f"at {self.watsonx_config.url} (verify_ssl={self.watsonx_config.verify_ssl})"
+        )
         
         return ChatWatsonx(
             model_id=self.watsonx_config.model,
             url=self.watsonx_config.url,
             project_id=self.watsonx_config.project_id,
             apikey=self.api_key,
+            verify=self.watsonx_config.verify_ssl,
             params={
                 "max_tokens": 2048,  # Use max_tokens instead of max_new_tokens to avoid warning
                 "temperature": 0.7,
@@ -283,6 +289,10 @@ class GCMAgent:
             # Add user message to history
             self.history.append(HumanMessage(content=message))
             
+            # Track if we successfully streamed any content
+            streamed_content = False
+            last_messages = None
+            
             # Stream agent responses
             async for chunk in self.graph.astream(
                 {"messages": self.history},
@@ -290,13 +300,32 @@ class GCMAgent:
             ):
                 if "agent" in chunk:
                     messages = chunk["agent"]["messages"]
+                    last_messages = messages  # Keep track of last messages
                     for msg in messages:
                         if isinstance(msg, AIMessage) and not msg.tool_calls:
                             yield msg.content
+                            streamed_content = True
             
             # Update history after streaming
-            result = await self.graph.ainvoke({"messages": self.history})
-            self.history = result["messages"]
+            # Use last_messages from streaming if available to avoid re-invoking
+            if last_messages is not None:
+                # Reconstruct history from streamed messages
+                # Remove the user message we added and replace with complete result
+                self.history = self.history[:-1] + last_messages
+                self.logger.debug("Updated history from streamed messages")
+            else:
+                # Fallback: try to invoke to get final state, but catch errors
+                try:
+                    result = await self.graph.ainvoke({"messages": self.history})
+                    self.history = result["messages"]
+                    self.logger.debug("Updated history from final invocation")
+                except Exception as invoke_error:
+                    # If final invocation fails but we streamed content, log warning but don't fail
+                    if streamed_content:
+                        self.logger.warning(f"Final invocation failed but streaming succeeded: {invoke_error}")
+                    else:
+                        # If we didn't stream anything, this is a real error
+                        raise
             
         except Exception as e:
             self.logger.error(f"Agent streaming failed: {e}")

@@ -207,4 +207,36 @@ class TestSystemPrompt:
         assert 'GCM' in prompt or 'Guardium' in prompt or 'cryptography' in prompt.lower()
 
 
+    @patch('gcm_agent.agent.gcm_agent.ChatWatsonx')
+    def test_initialize_llm_passes_verify_ssl(self, mock_chat_watsonx):
+        """Test WatsonX SSL verification is passed to ChatWatsonx."""
+        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
+        
+        mock_mcp_client = AsyncMock()
+        mock_tool_loader = AsyncMock()
+        
+        watsonx_config = WatsonXConfig(
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2',
+            verify_ssl=False,
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        
+        agent = GCMAgent(
+            mcp_client=mock_mcp_client,
+            tool_loader=mock_tool_loader,
+            watsonx_config=watsonx_config,
+            api_key='test_api_key',
+            agent_config=agent_config
+        )
+        
+        agent._initialize_llm()
+        
+        mock_chat_watsonx.assert_called_once()
+        assert mock_chat_watsonx.call_args.kwargs["verify"] is False
+
+
 # Made with Bob
