@@ -1,6 +1,7 @@
 """Keycloak authentication module for obtaining OAuth2 access tokens for the GCM agent."""
 
 # Made with Bob
+# 2026-06-06 07:30 UTC - CRITICAL FIX: Changed httpx.AsyncClient creation to NOT pass verify parameter when verify_ssl=False, allowing module-level SSL bypass patch to apply (fixes intermittent SSL errors)
 # 2026-06-05 21:58 UTC - Initial implementation of KeycloakAuthenticator with OAuth2 token management
 # 2026-06-05 21:04 UTC - Updated to use separate Keycloak URL configuration
 
@@ -101,7 +102,16 @@ class KeycloakAuthenticator:
         }
 
         try:
-            async with httpx.AsyncClient(verify=self.verify_ssl) as client:
+            # CRITICAL: Only pass verify if SSL verification is explicitly enabled
+            # This allows the module-level SSL bypass patch to apply when verify_ssl=False
+            client_kwargs = {}
+            if self.verify_ssl:
+                client_kwargs["verify"] = True
+                self.logger.debug("get_token: SSL verification ENABLED")
+            else:
+                self.logger.debug("get_token: SSL verification DISABLED - using module-level bypass")
+            
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.post(token_url, headers=headers, data=data)
 
                 if response.status_code != 200:
@@ -171,7 +181,16 @@ class KeycloakAuthenticator:
         }
 
         try:
-            async with httpx.AsyncClient(verify=self.verify_ssl) as client:
+            # CRITICAL: Only pass verify if SSL verification is explicitly enabled
+            # This allows the module-level SSL bypass patch to apply when verify_ssl=False
+            client_kwargs = {}
+            if self.verify_ssl:
+                client_kwargs["verify"] = True
+                self.logger.debug("refresh_token: SSL verification ENABLED")
+            else:
+                self.logger.debug("refresh_token: SSL verification DISABLED - using module-level bypass")
+            
+            async with httpx.AsyncClient(**client_kwargs) as client:
                 response = await client.post(token_url, headers=headers, data=data)
 
                 if response.status_code != 200:

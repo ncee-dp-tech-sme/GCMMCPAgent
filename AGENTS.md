@@ -47,6 +47,59 @@ Full-stack Python application - IBM Guardium Cryptography Manager MCP Server int
 **Operational Recommendation:**
 - For `policy_violations_dashboard`, verify and correct the remote GCM MCP server tool mapping/schema for `/ibm/gempolicyengine/api/v1/violations/dashboards/policy-violations`
 - For discovery mode `execute`, keep prompts steering the LLM away from `execute` for simple retrieval queries and rely on the new client-side validation for malformed workflow payloads
+### Fixed Intermittent SSL Certificate Verification Error (2026-06-06 07:30 UTC)
+
+**Root Cause:**
+The intermittent SSL certificate verification error (`[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: self-signed certificate`) was caused by `KeycloakAuthenticator` in `gcm_agent/auth/keycloak_auth.py` explicitly passing `verify=self.verify_ssl` to `httpx.AsyncClient()` on lines 104 and 174.
+
+**Why This Caused Intermittent Errors:**
+1. The module-level SSL bypass patch in `gcm_agent/__init__.py` only applies when the `verify` parameter is NOT in kwargs or is None
+2. When `verify_ssl=True` (the default), `keycloak_auth.py` was passing `verify=True` explicitly
+3. This overrode the module-level SSL bypass patch, causing SSL verification to be enabled
+4. The "randomness" was due to timing - errors occurred when Keycloak authentication happened (token request/refresh)
+5. `gcm_auth.py` was already fixed (SSL_BYPASS_FIX.md), but `keycloak_auth.py` was missed
+
+**The Error Chain:**
+```
+KeycloakAuthenticator.get_token() or .refresh_token()
+  ↓
+httpx.AsyncClient(verify=self.verify_ssl)  # verify=True overrides module-level patch
+  ↓
+SSL verification enabled despite module-level bypass
+  ↓
+[SSL: CERTIFICATE_VERIFY_FAILED] for self-signed certificates
+```
+
+**The Fix (gcm_agent/auth/keycloak_auth.py):**
+Modified two methods to NOT pass `verify` parameter when `verify_ssl=False`:
+
+1. `get_token()` (lines 103-112): Only passes `verify=True` when `verify_ssl=True`
+2. `refresh_token()` (lines 173-182): Only passes `verify=True` when `verify_ssl=True`
+
+**Key Pattern (matches gcm_auth.py):**
+```python
+# WRONG - Always overrides module-level patch
+client = httpx.AsyncClient(verify=self.verify_ssl)
+
+# CORRECT - Let module-level patch apply when verify_ssl=False
+client_kwargs = {}
+if self.verify_ssl:
+    client_kwargs["verify"] = True  # Only when explicitly needed
+client = httpx.AsyncClient(**client_kwargs)
+```
+
+**Verification:**
+- Test script: `test_keycloak_ssl_bypass_fix.py` ✓
+- Confirms `get_token()` and `refresh_token()` respect module-level SSL bypass
+- Confirms SSL verification can still be enabled when needed (production)
+
+**Complete SSL Bypass Coverage:**
+All httpx.AsyncClient creation points now respect module-level SSL bypass:
+- ✓ `gcm_agent/__init__.py` - Module-level patch applied at import time
+- ✓ `gcm_agent/auth/gcm_auth.py` - Fixed in SSL_BYPASS_FIX.md (2026-06-06 07:17 UTC)
+- ✓ `gcm_agent/auth/keycloak_auth.py` - Fixed in this update (2026-06-06 07:30 UTC)
+- ✓ `gcm_agent/mcp/client.py` - No direct httpx.AsyncClient creation (uses factory)
+
 
 ### Fixed SSL Certificate Verification Error (2026-06-06 07:17 UTC)
 
