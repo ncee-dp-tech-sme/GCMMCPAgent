@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-06 01:59 UTC - Added parameter unwrapping to fix Pydantic validation errors from LangChain MCP adapter nested params structure
 # 2026-06-06 01:08 UTC - Removed module-level SSL bypass (now handled at app.py startup)
 # 2026-06-06 00:55 UTC - Implemented module-level SSL bypass before MCP imports to fix SSL verification errors
 # 2026-06-06 00:28 UTC - Added token refresh mechanism and reconnection support to fix intermittent SSL/500 errors
@@ -279,11 +280,40 @@ class GCMMCPClient:
             from gcm_agent.mcp import MCPToolError
             raise MCPToolError(f"Failed to fetch tools: {e}") from e
     
+    def _unwrap_params(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Unwrap nested params structure from LangChain MCP adapter.
+        
+        The LangChain MCP adapter wraps tool parameters in a nested 'params'
+        structure: {"params": {"arg1": val1, "arg2": val2}}
+        But the GCM MCP server expects flat parameters: {"arg1": val1, "arg2": val2}
+        
+        This method detects and unwraps the nested structure while preserving
+        flat structures that don't need unwrapping.
+        
+        Args:
+            arguments: Tool arguments (may be wrapped or flat)
+        
+        Returns:
+            Unwrapped arguments dictionary
+        """
+        # Check if arguments contain a nested 'params' dict
+        if isinstance(arguments, dict) and "params" in arguments and len(arguments) == 1:
+            # Extract the contents of 'params'
+            unwrapped = arguments["params"]
+            if isinstance(unwrapped, dict):
+                self.logger.debug(f"Unwrapped nested params structure: {list(unwrapped.keys())}")
+                return unwrapped
+        
+        # Return original structure if no unwrapping needed
+        return arguments
+    
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         Execute a tool on the MCP server.
         
         Checks token expiration before executing the tool.
+        Automatically unwraps nested 'params' structures from LangChain MCP adapter.
         
         Args:
             tool_name: Name of the tool to execute
@@ -304,7 +334,10 @@ class GCMMCPClient:
         # Check and refresh token before operation
         await self._check_and_refresh_token()
         
-        self.logger.info(f"Executing tool '{tool_name}' with arguments: {arguments}")
+        # Unwrap nested params structure if present (handles LangChain MCP adapter wrapping)
+        unwrapped_arguments = self._unwrap_params(arguments)
+        
+        self.logger.info(f"Executing tool '{tool_name}' with arguments: {unwrapped_arguments}")
         
         try:
             # Get tools to find the requested tool
@@ -321,8 +354,8 @@ class GCMMCPClient:
                 from gcm_agent.mcp import ToolNotFoundError
                 raise ToolNotFoundError(f"Tool '{tool_name}' not found")
             
-            # Execute the tool
-            result = await tool.ainvoke(arguments)
+            # Execute the tool with unwrapped arguments
+            result = await tool.ainvoke(unwrapped_arguments)
             
             self.logger.info(f"Successfully executed tool '{tool_name}'")
             self.logger.debug(f"Tool result: {result}")

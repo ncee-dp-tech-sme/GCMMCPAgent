@@ -23,6 +23,14 @@ Documentation-only repository - contains IBM Guardium Cryptography Manager MCP S
 - SSL verification enabled by default - custom `_client_factory()` needed to override
 - Must pop `verify` kwarg before creating AsyncClient to avoid conflicts
 
+### LangChain MCP Adapter Parameter Wrapping
+- **Critical**: LangChain MCP adapter wraps tool parameters in nested `{"params": {...}}` structure
+- GCM MCP server expects flat parameters: `{"arg1": val1, "arg2": val2}`
+- Without unwrapping, causes Pydantic validation errors: "Field required" for all parameters
+- Fix: `_unwrap_params()` method in `GCMMCPClient.execute_tool()` automatically detects and flattens
+- Unwrapping is transparent - handles both wrapped and flat parameter structures
+- Example: `{"params": {"asset_category": "key"}}` → `{"asset_category": "key"}`
+
 ### Tool Loading Pattern
 - GCM MCP exposes 26 tools via `MultiServerMCPClient.get_tools()`
 - Tools must be loaded during agent initialization, not runtime (performance)
