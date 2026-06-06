@@ -363,13 +363,20 @@ class GCMAuthenticator:
             # Define event hooks for request/response logging
             async def log_request(request):
                 """Log outgoing HTTP requests with masked headers."""
-                # Mask Authorization header in logs
+                # Mask Authorization header in logs (case-insensitive check)
                 logged_headers = dict(request.headers)
-                if "Authorization" in logged_headers:
-                    auth_value = logged_headers["Authorization"]
+                # Check for both 'authorization' (lowercase) and 'Authorization' (capitalized)
+                auth_key = None
+                for key in logged_headers:
+                    if key.lower() == "authorization":
+                        auth_key = key
+                        break
+                
+                if auth_key:
+                    auth_value = logged_headers[auth_key]
                     if auth_value.startswith("Bearer "):
                         token = auth_value[7:]  # Remove "Bearer " prefix
-                        logged_headers["Authorization"] = f"Bearer {mask_token(token)}"
+                        logged_headers[auth_key] = f"Bearer {mask_token(token)}"
                 
                 logger.debug(
                     f"HTTP Request: {request.method} {request.url} | "
