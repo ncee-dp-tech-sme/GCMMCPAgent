@@ -3,7 +3,45 @@
 This file provides guidance to agents when working with code in this repository.
 
 ## Repository Type
-Documentation-only repository - contains IBM Guardium Cryptography Manager MCP Server integration guides. No executable code.
+Full-stack Python application - IBM Guardium Cryptography Manager MCP Server integration with LangGraph agent.
+
+## Recent Updates (2026-06-06)
+
+### OpenAI LLM Support Added
+- Added OpenAI as an alternative LLM provider alongside WatsonX
+- New configuration models: `OpenAIConfig`, `LLMConfig` in `config_manager.py`
+- Agent now supports both providers via `llm_provider` parameter
+- Environment variables: `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE`, `OPENAI_MAX_TOKENS`
+- Easy switching between providers via configuration
+
+### Connection Stability Analysis
+**Investigation Result: Architecture is CORRECT - No bug found**
+
+After thorough analysis of the intermittent 500/SSL errors reported after the first operation:
+
+1. **Token Lifecycle Management is Properly Implemented:**
+   - `GCMAuthenticator` tracks token expiration with 60-second buffer
+   - `_check_and_refresh_token()` called before ALL MCP operations (connect, get_tools, execute_tool)
+   - Token refresh properly recreates MCP client with new factory via `reconnect_with_new_factory()`
+   - Token info updated after refresh with new expiration time
+
+2. **MCP Client Reuse is Correct:**
+   - Single MCP client instance created during agent initialization
+   - Same client reused for all tool calls throughout session
+   - No unnecessary recreation between tool calls
+   - Client only recreated when token expires (which is correct behavior)
+
+3. **x-gcm-hostname Header Propagation is Fixed:**
+   - Header injected at factory level in `_client_factory()`
+   - Persists through token refresh cycles
+   - Passed to factory during both initial creation and token refresh
+
+**Potential Issues to Monitor:**
+- If errors persist, they may be server-side (GCM server instability)
+- Network connectivity issues between client and GCM server
+- Token refresh timing edge cases (though 60-second buffer should prevent this)
+
+**Recommendation:** Test with both WatsonX and OpenAI to isolate whether issues are LLM-specific or MCP-specific.
 
 ## Non-Obvious Integration Patterns
 
@@ -14,9 +52,36 @@ Documentation-only repository - contains IBM Guardium Cryptography Manager MCP S
 
 ### GCM Hostname Header Requirement
 - **Critical**: MCP server requires `x-gcm-hostname` header to construct internal API URLs
-- Without this header, internal calls use placeholder hostname (e.g., `asset`) causing 500 errors
+- Without this header, internal calls use placeholder hostname (e.g., `asset`) causing 400/500 errors
 - Must pass actual GCM hostname (not full URL) in MCP client headers
 - Example: `"x-gcm-hostname": "gcm.example.com"` for URL `https://gcm.example.com:9443`
+
+**Root Cause of Header Propagation Bug:**
+- Header was only configured in MCP client initialization (`GCMMCPClient.__init__`)
+- MCP protocol layer creates its own httpx.AsyncClient instances for API calls
+- Header was NOT injected into the httpx client factory, causing it to be lost
+- Result: GCM server received requests without hostname, defaulted to placeholder `asset`
+
+**The Fix (3 files modified):**
+1. [`gcm_agent/auth/gcm_auth.py`](gcm_agent/auth/gcm_auth.py):
+   - Added `gcm_hostname` parameter to `_client_factory()` method
+   - Factory now injects `x-gcm-hostname` header into ALL httpx requests
+   - Updated docstring to document hostname parameter
+2. [`gcm_agent/auth/__init__.py`](gcm_agent/auth/__init__.py):
+   - Updated `get_client_factory()` to pass `gcm_config.hostname` to factory
+3. [`gcm_agent/mcp/client.py`](gcm_agent/mcp/client.py):
+   - Updated `reconnect_with_new_factory()` to pass `self.gcm_hostname` during token refresh
+   - Ensures header persists through token refresh cycles
+
+**How It Works:**
+- Header injected at factory level (not just MCP config level)
+- Factory creates httpx.AsyncClient with header pre-configured
+- All HTTP requests (initial + token refresh) include correct hostname
+- Pattern ensures header survives token lifecycle management
+
+**Verification:**
+- Test script: [`test_gcm_hostname_fix.py`](test_gcm_hostname_fix.py) validates header propagation
+- Confirms header present in both initial requests and post-refresh requests
 
 ### SSL Bypass Implementation (Module-Level)
 - **Critical**: SSL bypass MUST be applied at module import time in `gcm_agent/__init__.py`
@@ -45,7 +110,7 @@ Documentation-only repository - contains IBM Guardium Cryptography Manager MCP S
 - Tools must be loaded during agent initialization, not runtime (performance)
 - Multiple MCP servers (e.g., GCM + Slack) combine tools via list concatenation
 
-### Discovery Mode (x-mcp-enable-discovery header)
+### Discovery Mode (x-mcp-code-mode header)
 - `true`: Returns 4 discovery tools + 1 execute tool (search, get_schema, list_tools, tags, execute)
 - `false`/omitted: Returns all 26 application tools (standard mode)
 - Discovery tools enable dynamic tool loading - agent searches/loads only needed tools

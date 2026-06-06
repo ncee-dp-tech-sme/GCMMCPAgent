@@ -136,6 +136,58 @@ class WatsonXConfig(BaseModel):
         validate_assignment = True
 
 
+class OpenAIConfig(BaseModel):
+    """Configuration for OpenAI LLM (API key stored separately in keyring)."""
+    
+    model: str = Field(
+        default="gpt-4o",
+        description="OpenAI model identifier"
+    )
+    temperature: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature"
+    )
+    max_tokens: int = Field(
+        default=2048,
+        ge=1,
+        le=128000,
+        description="Maximum tokens in response"
+    )
+
+    @validator("model")
+    def validate_model(cls, v):
+        """Validate model name is not empty."""
+        if not v or not v.strip():
+            raise ValueError("Model name cannot be empty")
+        return v.strip()
+
+    class Config:
+        """Pydantic model configuration."""
+        validate_assignment = True
+
+
+class LLMConfig(BaseModel):
+    """Configuration for LLM provider selection."""
+    
+    provider: str = Field(
+        default="watsonx",
+        description="LLM provider (watsonx or openai)"
+    )
+
+    @validator("provider")
+    def validate_provider(cls, v):
+        """Validate provider is supported."""
+        if v not in ["watsonx", "openai"]:
+            raise ValueError("Provider must be 'watsonx' or 'openai'")
+        return v.lower()
+
+    class Config:
+        """Pydantic model configuration."""
+        validate_assignment = True
+
+
 class AgentConfig(BaseModel):
     """Configuration for agent behavior."""
     
@@ -345,6 +397,56 @@ class ConfigManager:
         except ValidationError as e:
             self.logger.error(f"Invalid WatsonX configuration: {e}")
             raise InvalidConfigError(f"Invalid WatsonX configuration: {e}") from e
+    def get_llm_config(self) -> LLMConfig:
+        """
+        Get LLM provider configuration.
+
+        Returns:
+            LLMConfig instance
+
+        Raises:
+            MissingConfigError: If configuration is not found
+            InvalidConfigError: If configuration is invalid
+        """
+        if self._config_cache is None:
+            self.load_config()
+
+        if self._config_cache is None or "llm" not in self._config_cache:
+            # Return default LLM config if not found (watsonx)
+            self.logger.debug("LLM configuration not found, using default (watsonx)")
+            return LLMConfig()
+
+        try:
+            return LLMConfig(**self._config_cache["llm"])
+        except ValidationError as e:
+            self.logger.error(f"Invalid LLM configuration: {e}")
+            raise InvalidConfigError(f"Invalid LLM configuration: {e}") from e
+
+    def get_openai_config(self) -> OpenAIConfig:
+        """
+        Get OpenAI configuration (without API key).
+
+        Returns:
+            OpenAIConfig instance
+
+        Raises:
+            MissingConfigError: If configuration is not found
+            InvalidConfigError: If configuration is invalid
+        """
+        if self._config_cache is None:
+            self.load_config()
+
+        if self._config_cache is None or "openai" not in self._config_cache:
+            # Return default OpenAI config if not found
+            self.logger.debug("OpenAI configuration not found, using defaults")
+            return OpenAIConfig()
+
+        try:
+            return OpenAIConfig(**self._config_cache["openai"])
+        except ValidationError as e:
+            self.logger.error(f"Invalid OpenAI configuration: {e}")
+            raise InvalidConfigError(f"Invalid OpenAI configuration: {e}") from e
+
 
     def get_agent_config(self) -> AgentConfig:
         """
@@ -481,6 +583,51 @@ class ConfigManager:
 
         self._config_cache["agent"] = config.dict()
         self._save_config_to_storage(self._config_cache)
+
+    def update_llm_config(self, config: LLMConfig) -> None:
+        """
+        Update LLM provider configuration.
+
+        Args:
+            config: LLMConfig instance
+
+        Raises:
+            StorageError: If save operation fails
+        """
+        if self._config_cache is None:
+            self.load_config()
+
+        if self._config_cache is None:
+            self._config_cache = {}
+
+        self._config_cache["llm"] = config.dict()
+        self._save_config_to_storage(self._config_cache)
+        self.logger.info(f"Updated LLM configuration (provider={config.provider})")
+
+    def update_openai_config(self, config: OpenAIConfig, api_key: str) -> None:
+        """
+        Update OpenAI configuration including API key.
+
+        Args:
+            config: OpenAIConfig instance
+            api_key: OpenAI API key
+
+        Raises:
+            StorageError: If save operation fails
+        """
+        if self._config_cache is None:
+            self.load_config()
+
+        if self._config_cache is None:
+            self._config_cache = {}
+
+        # Store non-sensitive config
+        self._config_cache["openai"] = config.dict()
+        self._save_config_to_storage(self._config_cache)
+
+        # Store API key separately
+        self.storage.store_credential("openai_api_key", api_key)
+        self.logger.info("Updated OpenAI configuration")
         self.logger.info("Updated agent configuration")
 
     def get_password(self) -> Optional[str]:
@@ -522,6 +669,22 @@ class ConfigManager:
             self.logger.error(f"Failed to retrieve WatsonX API key: {e}")
             return None
 
+    def get_openai_api_key(self) -> Optional[str]:
+        """
+        Get OpenAI API key from secure storage.
+
+        Returns:
+            API key if found, None otherwise
+        """
+        try:
+            return self.storage.get_credential("openai_api_key")
+        except StorageError as e:
+            self.logger.error(f"Failed to retrieve OpenAI API key: {e}")
+            return None
+        except StorageError as e:
+            self.logger.error(f"Failed to retrieve WatsonX API key: {e}")
+            return None
+
     def is_configured(self) -> bool:
         """
         Check if all required configuration exists.
@@ -534,7 +697,6 @@ class ConfigManager:
             self.get_keycloak_config()
             self.get_gcm_config()
             self.get_auth_config()
-            self.get_watsonx_config()
 
             # Check sensitive credentials
             if not self.get_password():
@@ -543,9 +705,19 @@ class ConfigManager:
             if not self.get_client_secret():
                 self.logger.debug("Missing client secret")
                 return False
-            if not self.get_watsonx_api_key():
-                self.logger.debug("Missing WatsonX API key")
-                return False
+
+            # Check LLM provider configuration
+            llm_config = self.get_llm_config()
+            if llm_config.provider == "watsonx":
+                self.get_watsonx_config()
+                if not self.get_watsonx_api_key():
+                    self.logger.debug("Missing WatsonX API key")
+                    return False
+            elif llm_config.provider == "openai":
+                self.get_openai_config()
+                if not self.get_openai_api_key():
+                    self.logger.debug("Missing OpenAI API key")
+                    return False
 
             return True
         except (MissingConfigError, InvalidConfigError):

@@ -7,7 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Comprehensive Header Logging**: Added detailed logging for Authorization Bearer token verification
+  - Added token masking in logs (shows first 8 and last 4 characters only)
+  - Logs all headers at client factory creation with masked Authorization header
+  - Added httpx event hooks to log every outgoing HTTP request with headers
+  - Added httpx event hooks to log every HTTP response with status and timing
+  - Enhanced `authorize()` method to log authorization requests with masked token
+  - Created `test_auth_header_logging.py` to verify logging functionality
+  - Helps debug connection issues and verify token is being sent correctly
+  - Security: Token never fully exposed in logs, only partial masking for verification
+
+- **OpenAI LLM Support**: Added OpenAI as an alternative LLM provider alongside WatsonX
+  - New configuration models: `OpenAIConfig`, `LLMConfig` in `config_manager.py`
+  - Agent now supports both providers via `llm_provider` parameter
+  - Environment variables: `LLM_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_TEMPERATURE`, `OPENAI_MAX_TOKENS`
+  - Easy switching between providers via Configuration UI or environment variables
+  - Added `langchain-openai>=0.1.0` dependency to requirements.txt
+
 ### Fixed
+- **Critical**: Fixed x-gcm-hostname header propagation through token refresh cycles
+  - Header now injected at factory level in `_client_factory()` method
+  - Factory passes `gcm_hostname` parameter to ensure header persists
+  - Updated `reconnect_with_new_factory()` to pass hostname during token refresh
+  - Ensures header survives token lifecycle management
+  - Prevents 500 errors caused by missing hostname in MCP requests
+  - Modified files: `gcm_agent/auth/gcm_auth.py`, `gcm_agent/auth/__init__.py`, `gcm_agent/mcp/client.py`
+
+- **Critical**: Fixed discovery mode header name
+  - Changed from incorrect `x-mcp-enable-discovery` to correct `x-mcp-code-mode`
+  - Header values: `"true"` for discovery mode, `"false"` for standard mode
+  - Aligns with GCM MCP server API specification
+  - Modified file: `gcm_agent/mcp/client.py`
+
+- **Critical**: Fixed syntax error in config_manager.py
+  - Corrected malformed dictionary in `OpenAIConfig` model
+  - Fixed `Field(default={)` to proper `Field(default={})`
+  - Prevents import errors when using OpenAI configuration
+
+- **Critical**: Fixed token refresh to properly update expiration info after refresh
+  - `GCMAuthenticator.refresh_token()` now calls `set_token_info()` to update token expiration
+  - Retrieves new expiration time from Keycloak authenticator after token refresh
+  - Adds 30-second buffer to new expiration time for proactive refresh
+  - Includes fallback to 4-minute default if expiration time unavailable
+  - Prevents SSL/500 errors that occurred when refreshed token info wasn't updated
+  - Completes the token lifecycle management pattern documented in AGENTS.md
+
 - **Critical**: Implemented token refresh mechanism to fix intermittent SSL/500 errors
   - Added token expiration tracking to `GCMAuthenticator` with 60-second buffer
   - Implemented automatic token refresh via Keycloak when token expires
@@ -51,6 +96,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved logging to show extracted hostname for debugging
 
 ### Documentation
+- **Connection Stability Analysis**: Added comprehensive analysis to `AGENTS.md`
+  - Documented token lifecycle management architecture
+  - Confirmed no bugs in connection handling - architecture is correct
+  - Identified potential server-side or network issues if errors persist
+  - Recommendation to test with both WatsonX and OpenAI to isolate issues
+- **OpenAI LLM Support**: Updated `README.md` with new LLM provider section
+  - Added LLM Provider Configuration section with detailed setup instructions
+  - Updated architecture diagram to show both WatsonX and OpenAI support
+  - Updated configuration steps to include LLM provider selection
+  - Updated dependencies list to include langchain-openai
+  - Updated access requirements to list both LLM providers
 - Updated `AGENTS.md` with GCM Hostname Header Requirement section
 - Added troubleshooting sections for 500 errors and SSL verification failures
 - Updated `SETUP.md` with hostname configuration details and auto-extraction notes

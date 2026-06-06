@@ -679,7 +679,7 @@ asyncio.run(test_tools())
 
 **1. Verify Discovery Mode Support**
 - Check if GCM MCP server supports discovery mode
-- Look for `x-mcp-enable-discovery` header support
+- Look for `x-mcp-code-mode` header support
 
 **2. Disable Discovery Mode**
 - In Agent Settings, uncheck "Discovery Mode"
@@ -704,7 +704,7 @@ async def test_discovery():
     async with httpx.AsyncClient(verify=False) as client:
         response = await client.get(
             "https://gcm.example.com/ibm/mcp/mcp",
-            headers={"x-mcp-enable-discovery": "true"}
+            headers={"x-mcp-code-mode": "true"}
         )
         print(response.json())
 

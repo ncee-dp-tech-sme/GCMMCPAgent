@@ -191,3 +191,7 @@ docs/devsecops-security-mode-README.md
 docs/jenkins-scan-file.example
 DevSecOps_Security_Blueprint_Banking.txt
 docs/QuickStartGuide-IBMDocumentation.md
+
+
+# GCM MCP Server reference files (for development comparison only)
+gcm_mcp_server_reference/

@@ -75,10 +75,10 @@ Activate discovery tools in your AI assistant by adding a header.
 
 `headers = {`   
 `"Authorization": "Bearer YOUR_JWT_TOKEN",`   
-`"x-mcp-enable-discovery": "true" # Enable discovery tools`   
+`"x-mcp-code-mode": "true" # Enable discovery tools`
 `}` 
 
-Where, the `x-mcp-enable-discovery` header controls whether the client receives: 
+Where, the `x-mcp-code-mode` header controls whether the client receives:
 
 – `true`: 4 discovery tools (search, get\_schema, list\_tools, and tags) and execute tool 
 

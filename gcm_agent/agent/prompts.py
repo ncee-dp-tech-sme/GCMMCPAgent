@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 # Made with Bob
+# 2026-06-06 01:30 UTC - Added explicit instruction about single-value parameters to fix validation errors
 # 2026-06-06 00:24 UTC - Added dynamic current date/time injection to fix date calculation issues
 # 2026-06-05 22:11 UTC - Initial implementation of system prompts for GCM agent
 
@@ -22,6 +23,7 @@ CRITICAL INSTRUCTIONS:
 3. If a tool returns structured data, format it clearly for the user
 4. If an operation fails, explain why and suggest alternatives
 5. Always verify the results of operations before confirming success
+6. IMPORTANT: When a tool parameter accepts a literal value (e.g., 'PQC' or 'NON_PQC'), you MUST provide EXACTLY ONE value, NOT a list or multiple values. If you need data for multiple values, make separate tool calls.
 
 AVAILABLE TOOLS:
 Use the GCM MCP tools to interact with the Guardium Cryptography Manager system.

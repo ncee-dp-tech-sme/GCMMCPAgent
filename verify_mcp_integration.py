@@ -160,7 +160,7 @@ async def verify_imports():
         print()
         print("Key Features Implemented:")
         print("  • GCMMCPClient with streamable_http transport")
-        print("  • Discovery mode support (x-mcp-enable-discovery header)")
+        print("  • Discovery mode support (x-mcp-code-mode header)")
         print("  • GCMToolLoader with caching and search capabilities")
         print("  • Complete authentication flow integration")
         print("  • Async context manager support")

@@ -168,7 +168,7 @@ class GCMMCPClient:
         # Add discovery header if requested
         if discovery_mode:
             config["gcm"]["headers"] = {
-                "x-mcp-enable-discovery": "true"
+                "x-mcp-code-mode": "true"
             }
         
         client = MultiServerMCPClient(config)
@@ -538,7 +538,7 @@ def _client_factory(self, **kwargs) -> httpx.AsyncClient:
 
 ### Discovery Mode vs Standard Mode
 
-The GCM MCP server supports two operational modes controlled by the `x-mcp-enable-discovery` header:
+The GCM MCP server supports two operational modes controlled by the `x-mcp-code-mode` header:
 
 | Mode | Header Value | Tools Returned | Use Case |
 |------|-------------|----------------|----------|

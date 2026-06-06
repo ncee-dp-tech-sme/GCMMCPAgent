@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-06 02:59 UTC - Fixed x-gcm-hostname header propagation by passing gcm_hostname to _client_factory during token refresh
 # 2026-06-06 01:59 UTC - Added parameter unwrapping to fix Pydantic validation errors from LangChain MCP adapter nested params structure
 # 2026-06-06 01:08 UTC - Removed module-level SSL bypass (now handled at app.py startup)
 # 2026-06-06 00:55 UTC - Implemented module-level SSL bypass before MCP imports to fix SSL verification errors
@@ -35,7 +36,7 @@ class GCMMCPClient:
     - Connection state management
     - Tool caching for performance
     - Automatic reconnection on connection loss
-    - Discovery mode support via x-mcp-enable-discovery header
+    - Discovery mode support via x-mcp-code-mode header
     
     Example:
         >>> async with GCMMCPClient(gcm_url, client_factory) as client:
@@ -125,7 +126,7 @@ class GCMMCPClient:
                 
                 # Create new client factory with refreshed token
                 self.client_factory = self.gcm_authenticator._client_factory(
-                    new_token, self.timeout
+                    new_token, self.timeout, self.gcm_hostname
                 )
                 
                 # Reconnect with new factory
@@ -143,7 +144,7 @@ class GCMMCPClient:
         Establish MCP connection to GCM server.
         
         Creates MultiServerMCPClient with streamable_http transport and
-        proper authentication headers. The x-mcp-enable-discovery header
+        proper authentication headers. The x-mcp-code-mode header
         controls which tools are exposed by the server.
         
         SSL verification is controlled by the module-level patch applied
@@ -172,7 +173,7 @@ class GCMMCPClient:
                         "transport": "streamable_http",
                         "url": f"{self.gcm_url}/ibm/mcp/mcp",
                         "headers": {
-                            "x-mcp-enable-discovery": "true" if self.discovery_mode else "false",
+                            "x-mcp-code-mode": "true" if self.discovery_mode else "false",
                             "x-gcm-hostname": self.gcm_hostname
                         },
                         "httpx_client_factory": self.client_factory,

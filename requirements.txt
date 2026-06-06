@@ -3,6 +3,7 @@ langchain>=0.1.0
 langchain-core
 langgraph>=0.0.40
 langchain-ibm>=0.1.0
+langchain-openai>=0.1.0
 langchain-mcp-adapters>=0.1.0
 
 # HTTP and networking

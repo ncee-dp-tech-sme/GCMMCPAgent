@@ -1,6 +1,9 @@
 """GCM authorization module for completing the second authentication step against user management endpoints."""
 
 # Made with Bob
+# 2026-06-06 06:00 UTC - Added comprehensive header logging with token masking for debugging Authorization Bearer token
+# 2026-06-06 02:59 UTC - Added gcm_hostname parameter to _client_factory to inject x-gcm-hostname header in all HTTP requests
+# 2026-06-06 01:40 UTC - Fixed token refresh to properly update token expiration info after refresh, preventing SSL errors after token expiry
 # 2026-06-06 00:26 UTC - Added token expiration tracking and refresh mechanism to fix intermittent SSL/500 errors
 # 2026-06-06 00:02 UTC - Fixed SSL certificate verification error by ensuring _client_factory properly pops 'verify' kwarg before creating AsyncClient
 # 2026-06-05 21:58 UTC - Initial implementation of GCMAuthenticator with user management authorization
@@ -101,14 +104,22 @@ class GCMAuthenticator:
         self.logger.info("Refreshing expired token via Keycloak")
         
         try:
-            # Get fresh token from Keycloak
+            # Get fresh token from Keycloak (will use refresh_token if available)
             new_token = await self._keycloak_authenticator.get_token()
             
             # Re-authorize with GCM using new token
             await self.authorize(new_token, self._keycloak_authenticator.username)
             
-            # Update stored token (expiration will be updated by Keycloak authenticator)
-            self._access_token = new_token
+            # Update stored token info with new expiration
+            if self._keycloak_authenticator._token_expiry:
+                expires_in = int((self._keycloak_authenticator._token_expiry - datetime.utcnow()).total_seconds()) + 30
+                self.set_token_info(new_token, expires_in, self._keycloak_authenticator)
+                self.logger.info(f"Token refreshed successfully, new expiration in {expires_in}s")
+            else:
+                # Fallback: assume 5 minute expiration if not available
+                self._access_token = new_token
+                self._token_expires_at = datetime.utcnow() + timedelta(seconds=240)  # 4 min buffer
+                self.logger.warning("Token refreshed but expiration time unknown, using 4 minute default")
             
             self.logger.info("Successfully refreshed token and re-authorized with GCM")
             return new_token
@@ -152,6 +163,20 @@ class GCMAuthenticator:
         payload = {
             "tenantId": ""
         }
+        
+        # Log authorization request with masked token
+        def mask_token(token: str) -> str:
+            """Mask token showing only first 8 and last 4 characters."""
+            if len(token) <= 12:
+                return "***"
+            return f"{token[:8]}...{token[-4:]}"
+        
+        masked_headers = {
+            k: f"Bearer {mask_token(v[7:])}" if k == "Authorization" and v.startswith("Bearer ")
+               else v
+            for k, v in headers.items()
+        }
+        self.logger.info(f"Authorization request to {authorize_url} with headers: {masked_headers}")
 
         try:
             async with httpx.AsyncClient(verify=self.verify_ssl) as client:
@@ -219,6 +244,7 @@ class GCMAuthenticator:
         self,
         access_token: str,
         timeout: Optional[float] = 300.0,
+        gcm_hostname: Optional[str] = None,
     ) -> Callable[[], httpx.AsyncClient]:
         """
         Create factory function that returns authenticated httpx.AsyncClient.
@@ -234,12 +260,13 @@ class GCMAuthenticator:
         Args:
             access_token: OAuth2 access token from Keycloak (initial token)
             timeout: Request timeout in seconds (default: 300)
+            gcm_hostname: GCM hostname for x-gcm-hostname header (required for internal API calls)
 
         Returns:
             Factory function that creates authenticated AsyncClient
 
         Example:
-            >>> factory = gcm_auth._client_factory(token)
+            >>> factory = gcm_auth._client_factory(token, gcm_hostname="gcm.example.com")
             >>> client = factory()
             >>> # Use client for MCP operations
         """
@@ -293,10 +320,53 @@ class GCMAuthenticator:
                 "Authorization": f"Bearer {current_token}",
                 "Content-Type": "application/json",
             }
+            
+            # Add x-gcm-hostname header if provided (required for GCM internal API calls)
+            if gcm_hostname:
+                merged_headers["x-gcm-hostname"] = gcm_hostname
+                logger.debug(f"Added x-gcm-hostname header: {gcm_hostname}")
+            
+            # Log all headers being set (with token masked for security)
+            def mask_token(token: str) -> str:
+                """Mask token showing only first 8 and last 4 characters."""
+                if len(token) <= 12:
+                    return "***"
+                return f"{token[:8]}...{token[-4:]}"
+            
+            masked_headers = {
+                k: mask_token(v) if k == "Authorization" and v.startswith("Bearer ")
+                   else v
+                for k, v in merged_headers.items()
+            }
+            logger.info(f"HTTP client headers configured: {masked_headers}")
+            logger.debug(f"Full header count: {len(merged_headers)} headers")
 
             logger.debug(f"Creating AsyncClient with verify={verify_ssl}, remaining kwargs={list(kwargs.keys())}")
             
-            # Create client with explicit SSL verification setting
+            # Define event hooks for request/response logging
+            async def log_request(request):
+                """Log outgoing HTTP requests with masked headers."""
+                # Mask Authorization header in logs
+                logged_headers = dict(request.headers)
+                if "authorization" in logged_headers:
+                    auth_value = logged_headers["authorization"]
+                    if auth_value.startswith("Bearer "):
+                        token = auth_value[7:]  # Remove "Bearer " prefix
+                        logged_headers["authorization"] = f"Bearer {mask_token(token)}"
+                
+                logger.debug(
+                    f"HTTP Request: {request.method} {request.url} | "
+                    f"Headers: {logged_headers}"
+                )
+            
+            async def log_response(response):
+                """Log HTTP responses."""
+                logger.debug(
+                    f"HTTP Response: {response.status_code} from {response.url} | "
+                    f"Time: {response.elapsed.total_seconds():.2f}s"
+                )
+            
+            # Create client with explicit SSL verification setting and event hooks
             # For self-signed certs, verify_ssl will be False
             client = httpx.AsyncClient(
                 headers=merged_headers,
@@ -304,10 +374,14 @@ class GCMAuthenticator:
                 timeout=timeout,
                 trust_env=False,  # Don't use environment SSL settings
                 follow_redirects=True,  # Follow redirects
+                event_hooks={
+                    "request": [log_request],
+                    "response": [log_response],
+                },
                 **kwargs,
             )
             
-            logger.debug(f"AsyncClient created successfully with verify={verify_ssl}")
+            logger.debug(f"AsyncClient created successfully with verify={verify_ssl} and event hooks enabled")
             return client
 
         self.logger.debug(f"Created authenticated client factory (verify_ssl={verify_ssl})")

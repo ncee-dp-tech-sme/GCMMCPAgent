@@ -1,6 +1,7 @@
 """Main LangGraph agent module for coordinating prompts, tools, and GCM-specific workflows."""
 
 # Made with Bob
+# 2026-06-06 03:10 UTC - Added OpenAI LLM support as alternative to WatsonX
 # 2026-06-06 01:30 UTC - Added error handling in stream_chat to prevent TaskGroup exceptions
 # 2026-06-05 22:13 UTC - Added tool limiting to respect WatsonX 128 tool limit
 # 2026-06-05 22:11 UTC - Initial implementation of LangGraph agent following AGENTS.md patterns
@@ -8,18 +9,20 @@
 # 2026-06-05 22:05 UTC - Fixed to use ChatWatsonx instead of WatsonxLLM for tool binding support
 # 2026-06-06 02:43 UTC - Added WatsonX SSL verification configuration to LLM initialization
 
-from typing import List, Optional, AsyncGenerator
+from typing import List, Optional, AsyncGenerator, Union
 from datetime import datetime
 
 from langchain_ibm import ChatWatsonx
+from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_core.tools import Tool
+from langchain_core.language_models.chat_models import BaseChatModel
 
 from gcm_agent.mcp.client import GCMMCPClient
 from gcm_agent.mcp.tool_loader import GCMToolLoader
-from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
+from gcm_agent.config.config_manager import WatsonXConfig, OpenAIConfig, AgentConfig
 from gcm_agent.agent.prompts import get_system_prompt
 from gcm_agent.utils.logger import get_agent_logger
 
@@ -58,9 +61,12 @@ class GCMAgent:
         self,
         mcp_client: GCMMCPClient,
         tool_loader: GCMToolLoader,
-        watsonx_config: WatsonXConfig,
-        api_key: str,
         agent_config: AgentConfig,
+        llm_provider: str = "watsonx",
+        watsonx_config: Optional[WatsonXConfig] = None,
+        watsonx_api_key: Optional[str] = None,
+        openai_config: Optional[OpenAIConfig] = None,
+        openai_api_key: Optional[str] = None,
     ):
         """
         Initialize GCM Agent with LangGraph.
@@ -68,50 +74,84 @@ class GCMAgent:
         Args:
             mcp_client: Connected MCP client
             tool_loader: Tool loader instance
-            watsonx_config: WatsonX configuration
-            api_key: WatsonX API key
             agent_config: Agent configuration
+            llm_provider: LLM provider ("watsonx" or "openai")
+            watsonx_config: WatsonX configuration (required if llm_provider="watsonx")
+            watsonx_api_key: WatsonX API key (required if llm_provider="watsonx")
+            openai_config: OpenAI configuration (required if llm_provider="openai")
+            openai_api_key: OpenAI API key (required if llm_provider="openai")
         """
         self.mcp_client = mcp_client
         self.tool_loader = tool_loader
-        self.watsonx_config = watsonx_config
-        self.api_key = api_key
         self.agent_config = agent_config
+        self.llm_provider = llm_provider.lower()
         self.logger = get_agent_logger()
         
+        # Store LLM-specific configs
+        self.watsonx_config = watsonx_config
+        self.watsonx_api_key = watsonx_api_key
+        self.openai_config = openai_config
+        self.openai_api_key = openai_api_key
+        
+        # Validate configuration based on provider
+        if self.llm_provider == "watsonx":
+            if not watsonx_config or not watsonx_api_key:
+                raise AgentInitializationError("WatsonX config and API key required for watsonx provider")
+        elif self.llm_provider == "openai":
+            if not openai_config or not openai_api_key:
+                raise AgentInitializationError("OpenAI config and API key required for openai provider")
+        else:
+            raise AgentInitializationError(f"Unsupported LLM provider: {llm_provider}")
+        
         # Initialize components
-        self.llm: Optional[ChatWatsonx] = None
+        self.llm: Optional[BaseChatModel] = None
         self.tools: List[Tool] = []
         self.graph: Optional[StateGraph] = None
         self.history: List[BaseMessage] = []
         
-        self.logger.info("GCM Agent instance created")
+        self.logger.info(f"GCM Agent instance created (LLM provider: {self.llm_provider})")
 
-    def _initialize_llm(self) -> ChatWatsonx:
+    def _initialize_llm(self) -> BaseChatModel:
         """
-        Initialize WatsonX Chat LLM with configuration.
+        Initialize LLM based on configured provider.
         
         Returns:
-            Configured ChatWatsonx instance (supports tool calling)
+            Configured LLM instance (ChatWatsonx or ChatOpenAI)
         """
-        self.logger.debug(
-            f"Initializing ChatWatsonx with model: {self.watsonx_config.model} "
-            f"at {self.watsonx_config.url} (verify_ssl={self.watsonx_config.verify_ssl})"
-        )
+        if self.llm_provider == "watsonx":
+            self.logger.debug(
+                f"Initializing ChatWatsonx with model: {self.watsonx_config.model} "
+                f"at {self.watsonx_config.url} (verify_ssl={self.watsonx_config.verify_ssl})"
+            )
+            
+            return ChatWatsonx(
+                model_id=self.watsonx_config.model,
+                url=self.watsonx_config.url,
+                project_id=self.watsonx_config.project_id,
+                apikey=self.watsonx_api_key,
+                verify=self.watsonx_config.verify_ssl,
+                params={
+                    "max_tokens": 2048,
+                    "temperature": 0.7,
+                    "top_p": 0.9,
+                    "top_k": 50,
+                },
+            )
         
-        return ChatWatsonx(
-            model_id=self.watsonx_config.model,
-            url=self.watsonx_config.url,
-            project_id=self.watsonx_config.project_id,
-            apikey=self.api_key,
-            verify=self.watsonx_config.verify_ssl,
-            params={
-                "max_tokens": 2048,  # Use max_tokens instead of max_new_tokens to avoid warning
-                "temperature": 0.7,
-                "top_p": 0.9,
-                "top_k": 50,
-            },
-        )
+        elif self.llm_provider == "openai":
+            self.logger.debug(
+                f"Initializing ChatOpenAI with model: {self.openai_config.model}"
+            )
+            
+            return ChatOpenAI(
+                model=self.openai_config.model,
+                api_key=self.openai_api_key,
+                temperature=self.openai_config.temperature,
+                max_tokens=self.openai_config.max_tokens,
+            )
+        
+        else:
+            raise AgentInitializationError(f"Unsupported LLM provider: {self.llm_provider}")
 
     async def _load_tools(self) -> List[Tool]:
         """

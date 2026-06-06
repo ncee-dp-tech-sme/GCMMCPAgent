@@ -91,19 +91,41 @@ async def initialize_agent() -> str:
         keycloak_config = config_manager.get_keycloak_config()
         gcm_config = config_manager.get_gcm_config()
         auth_config = config_manager.get_auth_config()
-        watsonx_config = config_manager.get_watsonx_config()
         agent_config = config_manager.get_agent_config()
+        llm_config = config_manager.get_llm_config()
         
         # Get sensitive credentials
         password = config_manager.get_password()
         client_secret = config_manager.get_client_secret()
-        api_key = config_manager.get_watsonx_api_key()
         
-        if not all([password, client_secret, api_key]):
-            error_msg = "Missing credentials. Please reconfigure the agent."
+        if not all([password, client_secret]):
+            error_msg = "Missing GCM credentials. Please reconfigure the agent."
             logger.error(error_msg)
             _agent_state.error_message = error_msg
             return f"❌ {error_msg}"
+        
+        # Get LLM-specific configuration based on provider
+        watsonx_config = None
+        watsonx_api_key = None
+        openai_config = None
+        openai_api_key = None
+        
+        if llm_config.provider == "watsonx":
+            watsonx_config = config_manager.get_watsonx_config()
+            watsonx_api_key = config_manager.get_watsonx_api_key()
+            if not watsonx_api_key:
+                error_msg = "Missing WatsonX API key. Please reconfigure the agent."
+                logger.error(error_msg)
+                _agent_state.error_message = error_msg
+                return f"❌ {error_msg}"
+        elif llm_config.provider == "openai":
+            openai_config = config_manager.get_openai_config()
+            openai_api_key = config_manager.get_openai_api_key()
+            if not openai_api_key:
+                error_msg = "Missing OpenAI API key. Please reconfigure the agent."
+                logger.error(error_msg)
+                _agent_state.error_message = error_msg
+                return f"❌ {error_msg}"
         
         # Create MCP client and tool loader using the helper function
         logger.debug("Creating MCP client and tool loader")
@@ -119,13 +141,16 @@ async def initialize_agent() -> str:
         )
         
         # Create agent
-        logger.debug("Creating GCM Agent")
+        logger.debug(f"Creating GCM Agent with {llm_config.provider} LLM")
         _agent_state.agent = GCMAgent(
             mcp_client=_agent_state.mcp_client,
             tool_loader=_agent_state.tool_loader,
-            watsonx_config=watsonx_config,
-            api_key=api_key,
             agent_config=agent_config,
+            llm_provider=llm_config.provider,
+            watsonx_config=watsonx_config,
+            watsonx_api_key=watsonx_api_key,
+            openai_config=openai_config,
+            openai_api_key=openai_api_key,
         )
         
         # Initialize agent

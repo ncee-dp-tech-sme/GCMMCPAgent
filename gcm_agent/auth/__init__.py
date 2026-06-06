@@ -1,6 +1,7 @@
 """Authentication package for GCM Keycloak token retrieval and GCM authorization flows."""
 
 # Made with Bob
+# 2026-06-06 02:59 UTC - Updated get_client_factory to pass gcm_hostname to _client_factory for x-gcm-hostname header injection
 # 2026-06-06 00:27 UTC - Updated to pass token expiration info and Keycloak authenticator to GCMAuthenticator for refresh mechanism
 # 2026-06-05 21:59 UTC - Implemented custom exceptions, authenticate_gcm helper, and exports
 # 2026-06-05 21:04 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
@@ -209,8 +210,8 @@ async def get_client_factory(
         gcm_auth.set_token_info(access_token, expires_in, keycloak)
         logger.debug(f"Token expiration info stored in GCMAuthenticator (expires_in={expires_in}s)")
     
-    # Step 3: Create client factory
-    factory = gcm_auth._client_factory(access_token, timeout)
+    # Step 3: Create client factory with gcm_hostname for x-gcm-hostname header
+    factory = gcm_auth._client_factory(access_token, timeout, gcm_config.hostname)
     logger.info(f"Client factory created successfully with verify_ssl={gcm_config.verify_ssl}")
     
     # Return both factory and authenticator for token refresh capability
