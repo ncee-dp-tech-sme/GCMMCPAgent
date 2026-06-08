@@ -198,13 +198,14 @@ class AgentConfig(BaseModel):
         default=False,
         description="Enable discovery mode (dynamic tool loading). Disable for faster responses with all tools loaded upfront."
     )
-    # Fix for "need more steps" issue: increased from 10 to 20 to handle broad queries
-    # Discovery mode workflows need ~15-20 iterations for complex queries like "all keys/assets"
+    # Fix for "need more steps" issue: increased from 10 to 30 to handle complex queries
+    # Discovery mode workflows need ~15-20 iterations for simple queries
+    # Complex queries with date filtering need ~25-30 iterations
     max_iterations: int = Field(
-        default=20,
+        default=30,
         ge=1,
         le=100,
-        description="Maximum agent iterations. Increased to handle broad queries like 'all keys/assets'."
+        description="Maximum agent iterations. Increased to handle complex queries with filtering."
     )
     timeout: int = Field(
         default=300,

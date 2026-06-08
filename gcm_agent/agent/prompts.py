@@ -23,6 +23,8 @@ PARAMETER EXAMPLES:
 - Get certificate: {"certificate_id": "cert-123"}
 - Search assets: {"asset_type": "key", "page_number": 1, "page_size": 50}
 - Filter with empty criteria: {"filters": {}}
+- Date filtering: Use ISO 8601 format (YYYY-MM-DD) for date parameters
+- Last N days: Calculate date as (today - N days) in YYYY-MM-DD format
 
 Be precise, explain failures clearly, and handle production systems cautiously.
 """
