@@ -4,6 +4,7 @@
 # 2026-06-05 19:52 UTC - Initial implementation of structured logging utility
 # 2026-06-05 21:31 UTC - Added environment variable support for log level and file logging configuration
 # 2026-06-08 21:45 UTC - Added structured logging for observability (Phase 4)
+# 2026-06-08 21:56 UTC - Fixed import: use inspect.iscoroutinefunction instead of functools
 
 import logging
 import sys
@@ -11,6 +12,7 @@ import os
 import json
 import time
 import functools
+import inspect
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable
 from datetime import datetime
@@ -501,7 +503,7 @@ def timed_operation(operation_name: Optional[str] = None) -> Callable:
                 raise
         
         # Return appropriate wrapper based on function type
-        if functools.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             return async_wrapper
         else:
             return sync_wrapper
