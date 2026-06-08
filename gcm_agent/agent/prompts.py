@@ -18,6 +18,12 @@ CORE INSTRUCTIONS:
 4. Check tool schema for required parameters before calling
 5. Format responses clearly and verify operation results
 
+RESPONSE FORMATTING:
+- When listing multiple objects, present them in a table or structured format
+- Show only the most important fields (id, name, type, status) unless user asks for details
+- For repeated fields across objects, summarize instead of repeating
+- Example: "Found 15 keys, all with is_persistent=false" instead of showing the field 15 times
+
 PARAMETER EXAMPLES:
 - List keys: {"page_number": 1, "page_size": 50}
 - Get certificate: {"certificate_id": "cert-123"}

@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-08 21:11 UTC - Phase 3: Integrated tool usage analytics for intelligent tool prioritization
 # 2026-06-08 20:47 UTC - Phase 2: Added retry logic with exponential backoff for tool execution resilience
 # 2026-06-08 16:12 UTC - Added intelligent parameter defaults for pagination (page_number, page_size) to fix missing required parameters
 # 2026-06-06 05:43 UTC - Added execute payload normalization/validation and targeted 405 error enrichment for policy_violations_dashboard
@@ -24,6 +25,7 @@ import asyncio
 import traceback
 import sys
 import json
+import time
 
 from tenacity import (
     retry,
@@ -36,6 +38,7 @@ from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
 
 from gcm_agent.utils.logger import get_mcp_logger
+from gcm_agent.mcp.tool_analytics import ToolAnalytics
 
 
 class GCMMCPClient:
@@ -513,6 +516,7 @@ class GCMMCPClient:
         
         Checks token expiration before executing the tool.
         Automatically unwraps nested 'params' structures from LangChain MCP adapter.
+        Records tool usage analytics for intelligent prioritization.
         
         Args:
             tool_name: Name of the tool to execute
@@ -532,6 +536,11 @@ class GCMMCPClient:
         
         # Check and refresh token before operation
         await self._check_and_refresh_token()
+        
+        # Start timing for analytics
+        start_time = time.time()
+        success = False
+        analytics = ToolAnalytics()
         
         # Log tool execution inputs for debugging.
         self.logger.info("=" * 80)
@@ -637,9 +646,18 @@ class GCMMCPClient:
             self.logger.info("=" * 80)
             self.logger.info(f"Successfully executed tool '{tool_name}'")
             
+            # Record successful execution
+            success = True
+            duration = time.time() - start_time
+            analytics.record_tool_use(tool_name, success=True, duration=duration)
+            
             return actual_result
             
         except Exception as e:
+            # Record failed execution
+            duration = time.time() - start_time
+            analytics.record_tool_use(tool_name, success=False, duration=duration)
+            
             error_message = str(e)
 
             if tool_name == "policy_violations_dashboard" and "405" in error_message:

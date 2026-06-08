@@ -1,6 +1,7 @@
 """Tool loader for dynamic tool loading from GCM MCP server."""
 
 # Made with Bob
+# 2026-06-08 21:12 UTC - Phase 3: Added force refresh, analytics integration, and intelligent tool prioritization
 # 2026-06-05 22:02 UTC - Initial implementation of GCMToolLoader with caching and discovery mode support
 
 from typing import List, Dict, Optional, Any
@@ -9,6 +10,7 @@ import time
 from langchain_core.tools import Tool
 
 from gcm_agent.utils.logger import get_mcp_logger
+from gcm_agent.mcp.tool_analytics import ToolAnalytics
 
 
 class ToolCache:
@@ -139,15 +141,19 @@ class GCMToolLoader:
         self.cache = ToolCache(ttl=cache_ttl)
         self.logger = get_mcp_logger()
         
+        self.analytics = ToolAnalytics()
         self.logger.debug(f"GCMToolLoader initialized with cache_ttl={cache_ttl}s")
     
-    async def load_tools(self) -> List[Tool]:
+    async def load_tools(self, force_refresh: bool = False) -> List[Tool]:
         """
         Load all tools from MCP server.
         
         Returns cached tools if available and not expired, otherwise
         fetches from server. In discovery mode, returns 5 discovery tools.
         In standard mode, returns all 26 application tools.
+        
+        Args:
+            force_refresh: If True, bypass cache and fetch fresh tools
         
         Returns:
             List of LangChain Tool objects
@@ -158,10 +164,11 @@ class GCMToolLoader:
         """
         cache_key = "all_tools"
         
-        # Check cache first
-        cached_tools = self.cache.get(cache_key)
-        if cached_tools is not None:
-            return cached_tools
+        # Check cache first (unless force refresh)
+        if not force_refresh:
+            cached_tools = self.cache.get(cache_key)
+            if cached_tools is not None:
+                return cached_tools
         
         self.logger.info("Loading tools from MCP server")
         
@@ -369,14 +376,96 @@ class GCMToolLoader:
         """
         return self.cache.get("all_tools")
     
-    def clear_cache(self) -> None:
+    def clear_cache(self, key: Optional[str] = None) -> None:
         """
         Clear tool cache.
         
         Forces tools to be refetched on next load operation.
+        
+        Args:
+            key: Specific cache key to clear, or None to clear all
         """
-        self.cache.clear()
-        self.logger.info("Cleared tool cache")
+        if key:
+            self.cache.clear_key(key)
+            self.logger.info(f"Cleared cache for key '{key}'")
+        else:
+            self.cache.clear()
+            self.logger.info("Cleared all tool cache")
+    
+    async def load_prioritized_tools(self, force_refresh: bool = False) -> List[Tool]:
+        """
+        Load tools prioritized by usage analytics.
+        
+        Returns tools sorted by usage frequency and success rate,
+        with most important tools first. This helps the LLM select
+        the right tools faster by presenting commonly used tools first.
+        
+        Args:
+            force_refresh: If True, bypass cache and fetch fresh tools
+        
+        Returns:
+            List of tools sorted by priority (most important first)
+        
+        Raises:
+            MCPConnectionError: If not connected to MCP server
+            MCPToolError: If tool loading fails
+        """
+        # Load all tools
+        all_tools = await self.load_tools(force_refresh=force_refresh)
+        
+        # Get prioritized tool names from analytics
+        prioritized_names = self.analytics.get_prioritized_tool_list()
+        
+        if not prioritized_names:
+            # No analytics data yet, return tools as-is
+            self.logger.info("No analytics data available, returning unprioritized tools")
+            return all_tools
+        
+        # Create a mapping of tool name to tool object
+        tool_map = {tool.name: tool for tool in all_tools}
+        
+        # Build prioritized list
+        prioritized_tools = []
+        seen_tools = set()
+        
+        # Add tools in priority order
+        for tool_name in prioritized_names:
+            if tool_name in tool_map:
+                prioritized_tools.append(tool_map[tool_name])
+                seen_tools.add(tool_name)
+        
+        # Add any remaining tools that weren't in analytics
+        for tool in all_tools:
+            if tool.name not in seen_tools:
+                prioritized_tools.append(tool)
+        
+        self.logger.info(
+            f"Prioritized {len(prioritized_tools)} tools based on usage analytics "
+            f"({len(prioritized_names)} with analytics data)"
+        )
+        
+        return prioritized_tools
+    
+    def get_tool_analytics_summary(self) -> Dict[str, Any]:
+        """
+        Get summary of tool usage analytics.
+        
+        Returns:
+            Dictionary with analytics summary including:
+            - most_used: Top 10 most used tools
+            - total_tools_tracked: Number of tools with analytics data
+            - recent_pattern: Usage pattern for last 24 hours
+        """
+        most_used = self.analytics.get_most_used_tools(limit=10)
+        recent_pattern = self.analytics.get_recent_usage_pattern(hours=24)
+        all_stats = self.analytics.get_all_statistics()
+        
+        return {
+            "most_used": most_used,
+            "total_tools_tracked": len(all_stats),
+            "recent_pattern": recent_pattern,
+            "statistics": all_stats,
+        }
     
     async def list_available_tags(self) -> List[str]:
         """
