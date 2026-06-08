@@ -15,6 +15,12 @@ Full-stack Python application - IBM Guardium Cryptography Manager MCP Server int
 - Added `inspect` import to `gcm_agent/utils/logger.py`
 - All 19 observability tests now pass successfully
 
+**Configuration Fix (2026-06-08 22:03 UTC)**
+- Discovery mode should be disabled by default (`DISCOVERY_MODE=false`)
+- Execute tool has known bugs and causes errors in production
+- Standard mode loads all 26 tools upfront (more reliable)
+- Users experiencing "Error calling tool 'execute'" should verify `DISCOVERY_MODE=false` in `.env`
+
 **Structured Observability Logging**
 - Implemented comprehensive JSON-structured logging system for debugging and monitoring
 - New `ObservabilityLogger` class provides specialized logging methods:
