@@ -283,12 +283,12 @@ class DebugUI:
 
 def create_debug_ui() -> gr.Blocks:
     """
-    Create and return debug UI interface.
+    Create and return debug UI interface using the global instance.
     
     Returns:
         Gradio Blocks interface
     """
-    debug_ui = DebugUI()
+    debug_ui = get_debug_ui_instance()
     return debug_ui.create_ui()
 
 
