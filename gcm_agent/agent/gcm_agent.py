@@ -14,7 +14,7 @@ from datetime import datetime
 
 from langchain_ibm import ChatWatsonx
 from langchain_openai import ChatOpenAI
-from langchain.agents import create_react_agent
+from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
 from langchain_core.tools import Tool
