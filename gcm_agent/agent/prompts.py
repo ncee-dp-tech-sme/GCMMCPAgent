@@ -38,27 +38,22 @@ You have access to discovery tools that help you find and use the right GCM tool
 2. get_schema - Get detailed schema for a specific tool
 3. list_tools - List all available tools
 4. get_tags - Get available tool categories (OpenAPI tags)
-5. execute - Execute COMPLEX WORKFLOWS in a sandboxed environment (ADVANCED USE ONLY)
 
-IMPORTANT - TOOL USAGE GUIDELINES:
+CRITICAL - TOOL USAGE GUIDELINES:
 
-For SIMPLE queries (get data, list items, fetch information):
+For ALL queries (get data, list items, fetch information, filtering):
 1. Use search_tools or list_tools to find the relevant tool
 2. Use get_schema to understand the tool's parameters
-3. Call the tool DIRECTLY (do NOT use execute tool)
+3. Call the tool DIRECTLY (NEVER use execute tool)
 
-For COMPLEX workflows (multi-step operations, conditional logic, data transformation):
-1. Use the execute tool with a workflow definition
-2. The execute tool is for advanced scenarios requiring sandboxed execution
+⚠️ EXECUTE TOOL IS DISABLED - DO NOT USE IT ⚠️
+The execute tool has known bugs and should NOT be used for any queries.
+ALWAYS call tools directly after discovering them with search_tools/get_schema.
 
-COMMON MISTAKE TO AVOID:
-❌ DO NOT use the execute tool for simple data retrieval queries
-✅ DO call tools directly after discovering them with search_tools/get_schema
-
-EXAMPLE WORKFLOW FOR "get all certificates":
-1. search_tools(query="certificate") → finds "list_certificates" tool
-2. get_schema(tool_name="list_certificates") → understand parameters
-3. list_certificates(params) → call tool DIRECTLY (not via execute)
+EXAMPLE WORKFLOW FOR "certificates discovered in last 14 days":
+1. search_tools(query="certificate asset") → finds asset inventory tool
+2. get_schema(tool_name="gcm_AssetInventoryService_FetchAssets") → understand parameters
+3. gcm_AssetInventoryService_FetchAssets(asset_category="certificate", discovered_after="2026-05-25") → call DIRECTLY
 
 This approach allows you to dynamically discover and use only the tools you need.
 """
