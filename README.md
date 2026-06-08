@@ -31,7 +31,7 @@ The GCM Agent enables you to manage cryptographic assets, query key information,
                          │
 ┌────────────────────────▼────────────────────────────────────┐
 │                   LangGraph Agent Core                       │
-│         (IBM WatsonX or OpenAI LLM Backend)                  │
+│         (IBM WatsonX or openai LLM Backend)                  │
 └────────────────────────┬────────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────────┐
@@ -58,7 +58,7 @@ For detailed architecture information, see [`docs/architecture/GCM-Agent-Archite
 
 - **Python 3.10+** installed on your system
 - **IBM Guardium Cryptography Manager** access with valid credentials
-- **WatsonX/OpenAI credentials** (API key and project ID)
+- **WatsonX/openai credentials** (API key and project ID)
 - **Network connectivity** to GCM server and WatsonX services
 
 ### Installation
@@ -96,9 +96,9 @@ The application will start on `http://localhost:7860`
    - **Keycloak Server**: Authentication server URL, port, realm, and SSL verification
    - **GCM Server**: GCM MCP server URL, hostname, and SSL verification
    - **Authentication**: Username, password, client ID, and client secret (stored securely)
-   - **LLM Provider**: Choose between WatsonX or OpenAI
+   - **LLM Provider**: Choose between WatsonX or openai
      - **WatsonX**: API key, project ID, and model selection
-     - **OpenAI**: API key, model name, temperature, and max tokens
+     - **openai**: API key, model name, temperature, and max tokens
    - **Agent Settings**: Discovery mode, max iterations, and timeout
 4. **Click 💾 Save Configuration**
 5. **Test your connection** with 🔌 Test Connection
@@ -263,7 +263,7 @@ Core dependencies (see [`requirements.txt`](requirements.txt) for complete list)
 langchain>=0.1.0           # LangChain framework
 langgraph>=0.0.40          # Agent orchestration
 langchain-ibm>=0.1.0       # IBM WatsonX integration
-langchain-openai>=0.1.0    # OpenAI integration
+langchain-openai>=0.1.0    # openai integration
 langchain-mcp-adapters     # MCP protocol support
 httpx>=0.25.0              # Async HTTP client
 pydantic>=2.0.0            # Data validation
@@ -279,7 +279,7 @@ pytest>=7.4.0              # Testing framework
 
 ## LLM Provider Configuration
 
-The GCM Agent supports two LLM providers: **IBM WatsonX** and **OpenAI**. You can easily switch between them via the Configuration UI or environment variables.
+The GCM Agent supports two LLM providers: **IBM WatsonX** and **openai**. You can easily switch between them via the Configuration UI or environment variables.
 
 ### Choosing a Provider
 
@@ -289,9 +289,9 @@ The GCM Agent supports two LLM providers: **IBM WatsonX** and **OpenAI**. You ca
 - Supports multiple IBM foundation models
 - Best for IBM ecosystem integration
 
-**OpenAI**:
+**openai**:
 - Industry-leading language models (GPT-4, GPT-3.5-turbo, etc.)
-- Requires OpenAI API key
+- Requires openai API key
 - Configurable temperature and token limits
 - Best for general-purpose AI tasks
 
@@ -301,7 +301,7 @@ The GCM Agent supports two LLM providers: **IBM WatsonX** and **OpenAI**. You ca
 2. In the **LLM Configuration** section:
    - Select your preferred provider from the dropdown
    - **For WatsonX**: Enter API key, project ID, and select model
-   - **For OpenAI**: Enter API key, model name (e.g., `gpt-4`), temperature (0.0-1.0), and max tokens
+   - **For openai**: Enter API key, model name (e.g., `gpt-4`), temperature (0.0-1.0), and max tokens
 3. Click **💾 Save Configuration**
 4. Re-initialize the agent to apply changes
 
@@ -317,13 +317,13 @@ LLM_WATSONX_PROJECT_ID=your_project_id
 WATSONX_MODEL=ibm/granite-13b-chat-v2
 ```
 
-**For OpenAI:**
+**For openai:**
 ```bash
 LLM_PROVIDER=openai
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4
-OPENAI_TEMPERATURE=0.7
-OPENAI_MAX_TOKENS=4096
+openai_API_KEY=your_openai_api_key
+openai_MODEL=gpt-4
+openai_TEMPERATURE=0.7
+openai_MAX_TOKENS=4096
 ```
 
 ### Switching Providers
@@ -337,7 +337,7 @@ The agent will automatically use the selected provider for all LLM operations.
 
 - **LLM Provider** (choose one):
   - **WatsonX**: API key, project ID, active subscription
-  - **OpenAI**: API key, active subscription
+  - **openai**: API key, active subscription
 
 ## Security Considerations
 

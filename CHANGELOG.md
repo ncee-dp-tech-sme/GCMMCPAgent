@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - Phase 2: Configuration & Resilience (2026-06-08)
+- **Configurable LLM Parameters**: WatsonX LLM parameters now fully configurable via UI
+  - Added `temperature`, `max_tokens`, `top_p`, `top_k`, `decoding_method` fields to `WatsonXConfig`
+  - Added UI controls in Configuration tab for all LLM parameters
+  - Parameters now loaded from config instead of hardcoded values
+  - Defaults optimized for tool selection accuracy (temp=0.1, max_tokens=4096, greedy decoding)
+  - Modified files: `gcm_agent/config/config_manager.py`, `gcm_agent/agent/gcm_agent.py`, `gcm_agent/ui/config_ui.py`
+
+- **Retry Logic with Exponential Backoff**: Automatic retry for transient failures
+  - Added `tenacity` library for robust retry handling
+  - Tool execution now retries up to 3 times on ConnectionError, TimeoutError
+  - Exponential backoff: 2s, 4s, 8s between retries
+  - Logs retry attempts at WARNING level for visibility
+  - Modified file: `gcm_agent/mcp/client.py`
+  - Added dependency: `tenacity>=8.2.0` in `requirements.txt`
+
+### Fixed - Phase 2: Configuration & Resilience (2026-06-08)
+- **Recursion Limit Configuration**: Fixed max_iterations not being applied at agent creation
+  - Added `state_modifier` parameter to `create_react_agent()` for proper system prompt injection
+  - Recursion limit now correctly passed via config parameter in both `chat()` and `stream_chat()`
+  - Modified file: `gcm_agent/agent/gcm_agent.py`
+
+### Changed - Phase 2: Configuration & Resilience (2026-06-08)
+- **LLM Parameter Defaults**: Updated WatsonX configuration model
+  - `temperature`: 0.7 → 0.1 (more deterministic)
+  - `max_tokens`: 2048 → 4096 (complete reasoning)
+  - `top_p`: 0.9 → 0.95 (balanced sampling)
+  - `top_k`: 50 → 40 (focused selection)
+  - `decoding_method`: Added with default "greedy"
+
 ## [1.0.1] - 2026-06-06
 
 ### Fixed

@@ -5,6 +5,33 @@ This file provides guidance to agents when working with code in this repository.
 ## Repository Type
 Full-stack Python application - IBM Guardium Cryptography Manager MCP Server integration with LangGraph agent.
 
+## Recent Updates (2026-06-08)
+
+### Phase 2: Configuration & Resilience Improvements
+
+**Configurable LLM Parameters (2026-06-08 20:48 UTC)**
+- WatsonX LLM parameters now fully configurable via UI and config system
+- Added fields: `temperature`, `max_tokens`, `top_p`, `top_k`, `decoding_method` to `WatsonXConfig`
+- Agent reads parameters from config instead of hardcoded values
+- UI provides sliders and controls for all parameters with helpful descriptions
+- Defaults optimized for tool selection accuracy (temp=0.1, max_tokens=4096, greedy decoding)
+- Files modified: `gcm_agent/config/config_manager.py`, `gcm_agent/agent/gcm_agent.py`, `gcm_agent/ui/config_ui.py`
+
+**Retry Logic with Exponential Backoff (2026-06-08 20:47 UTC)**
+- Added automatic retry for transient network failures
+- Tool execution retries up to 3 times on ConnectionError, TimeoutError, asyncio.TimeoutError
+- Exponential backoff: 2s, 4s, 8s between retries
+- Uses `tenacity` library for robust retry handling
+- Logs retry attempts at WARNING level for visibility
+- File modified: `gcm_agent/mcp/client.py`
+- Dependency added: `tenacity>=8.2.0` in `requirements.txt`
+
+**Recursion Limit Configuration Fix (2026-06-08 20:47 UTC)**
+- Fixed `max_iterations` not being properly applied at agent creation
+- Added `state_modifier` parameter to `create_react_agent()` for system prompt injection
+- Recursion limit correctly passed via config in both `chat()` and `stream_chat()` methods
+- File modified: `gcm_agent/agent/gcm_agent.py`
+
 ### GCM MCP Server Execute Tool Bug - UnboundLocalError (2026-06-08 10:40 UTC)
 
 **Critical Server-Side Bug: Execute tool has undefined 'null' variable**

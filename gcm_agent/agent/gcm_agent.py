@@ -121,7 +121,8 @@ class GCMAgent:
         if self.llm_provider == "watsonx":
             self.logger.debug(
                 f"Initializing ChatWatsonx with model: {self.watsonx_config.model} "
-                f"at {self.watsonx_config.url} (verify_ssl={self.watsonx_config.verify_ssl})"
+                f"at {self.watsonx_config.url} (verify_ssl={self.watsonx_config.verify_ssl}), "
+                f"temperature={self.watsonx_config.temperature}, max_tokens={self.watsonx_config.max_tokens}"
             )
             
             return ChatWatsonx(
@@ -131,11 +132,11 @@ class GCMAgent:
                 apikey=self.watsonx_api_key,
                 verify=self.watsonx_config.verify_ssl,
                 params={
-                    "max_tokens": 4096,
-                    "temperature": 0.1,
-                    "top_p": 0.95,
-                    "top_k": 40,
-                    "decoding_method": "greedy",
+                    "max_tokens": self.watsonx_config.max_tokens,
+                    "temperature": self.watsonx_config.temperature,
+                    "top_p": self.watsonx_config.top_p,
+                    "top_k": self.watsonx_config.top_k,
+                    "decoding_method": self.watsonx_config.decoding_method,
                 },
             )
         
@@ -198,15 +199,19 @@ class GCMAgent:
         Returns:
             Compiled StateGraph
         """
-        self.logger.debug("Creating LangGraph agent")
+        self.logger.debug(
+            f"Creating LangGraph agent with max_iterations={self.agent_config.max_iterations}"
+        )
         
         # Get system prompt based on discovery mode
         system_prompt = get_system_prompt(self.agent_config.discovery_mode)
         
         # Create agent using create_react_agent() wrapper (CRITICAL per AGENTS.md)
+        # Phase 2: Pass max_iterations from config to properly limit recursion
         agent = create_react_agent(
             self.llm,
             self.tools,
+            state_modifier=system_prompt,
         )
         
         # Store system prompt for injection at conversation start

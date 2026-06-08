@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-08 20:47 UTC - Phase 2: Added retry logic with exponential backoff for tool execution resilience
 # 2026-06-08 16:12 UTC - Added intelligent parameter defaults for pagination (page_number, page_size) to fix missing required parameters
 # 2026-06-06 05:43 UTC - Added execute payload normalization/validation and targeted 405 error enrichment for policy_violations_dashboard
 # 2026-06-06 04:38 UTC - Fixed async/await error in execute_tool by checking if result is a coroutine and awaiting it (fixes 'execute' tool TypeError)
@@ -24,6 +25,13 @@ import traceback
 import sys
 import json
 
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+    before_sleep_log,
+)
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_core.tools import Tool
 
@@ -488,9 +496,20 @@ class GCMMCPClient:
         
         return enhanced_args
     
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type((ConnectionError, TimeoutError, asyncio.TimeoutError)),
+        before_sleep=before_sleep_log(get_mcp_logger(), "WARNING"),
+        reraise=True,
+    )
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
-        Execute a tool on the MCP server.
+        Execute a tool on the MCP server with automatic retry on transient failures.
+        
+        Retries up to 3 times with exponential backoff (2s, 4s, 8s) for:
+        - ConnectionError: Network connectivity issues
+        - TimeoutError: Request timeouts
         
         Checks token expiration before executing the tool.
         Automatically unwraps nested 'params' structures from LangChain MCP adapter.
@@ -505,7 +524,7 @@ class GCMMCPClient:
         Raises:
             MCPConnectionError: If not connected
             ToolNotFoundError: If tool not found
-            MCPToolError: If tool execution fails
+            MCPToolError: If tool execution fails (after retries)
         """
         if not self._connected or not self._mcp_client:
             from gcm_agent.mcp import MCPConnectionError
