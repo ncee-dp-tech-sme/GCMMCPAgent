@@ -9,6 +9,9 @@ langchain-mcp-adapters>=0.1.0
 # HTTP and networking
 httpx>=0.25.0
 
+# Retry logic (Phase 2: Resilience)
+tenacity>=8.2.0
+
 # Configuration and settings
 pydantic>=2.0.0
 pydantic-settings

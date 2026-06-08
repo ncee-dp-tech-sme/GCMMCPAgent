@@ -6,6 +6,7 @@
 # 2026-06-05 21:50 UTC - Added WatsonX URL configuration field
 # 2026-06-06 02:43 UTC - Added WatsonX SSL verification configuration support
 # 2026-06-06 04:26 UTC - Fixed "need more steps" issue: increased max_iterations to 20, disabled discovery_mode by default
+# 2026-06-08 20:46 UTC - Phase 2: Added configurable LLM parameters (temperature, max_tokens, top_p, top_k, decoding_method)
 
 import json
 import threading
@@ -110,6 +111,36 @@ class WatsonXConfig(BaseModel):
         description="WatsonX model identifier"
     )
     verify_ssl: bool = Field(default=False, description="Verify SSL certificates for WatsonX")
+    
+    # LLM generation parameters (Phase 2: Configurable LLM parameters)
+    temperature: float = Field(
+        default=0.1,
+        ge=0.0,
+        le=2.0,
+        description="Sampling temperature (0.0=deterministic, 2.0=creative). Lower values improve tool selection accuracy."
+    )
+    max_tokens: int = Field(
+        default=4096,
+        ge=256,
+        le=8192,
+        description="Maximum tokens in response. Higher values allow complete reasoning."
+    )
+    top_p: float = Field(
+        default=0.95,
+        ge=0.0,
+        le=1.0,
+        description="Nucleus sampling threshold. Controls diversity of token selection."
+    )
+    top_k: int = Field(
+        default=40,
+        ge=1,
+        le=100,
+        description="Top-k sampling. Limits token selection to top k candidates."
+    )
+    decoding_method: str = Field(
+        default="greedy",
+        description="Decoding method: 'greedy' (deterministic) or 'sample' (stochastic)"
+    )
 
     @validator("url")
     def validate_url(cls, v):
@@ -131,6 +162,13 @@ class WatsonXConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Model name cannot be empty")
         return v.strip()
+    
+    @validator("decoding_method")
+    def validate_decoding_method(cls, v):
+        """Validate decoding method is supported."""
+        if v not in ["greedy", "sample"]:
+            raise ValueError("Decoding method must be 'greedy' or 'sample'")
+        return v.lower()
 
     class Config:
         """Pydantic model configuration."""
@@ -198,13 +236,14 @@ class AgentConfig(BaseModel):
         default=False,
         description="Enable discovery mode (dynamic tool loading). Disable for faster responses with all tools loaded upfront."
     )
-    # Fix for "need more steps" issue: increased from 10 to 20 to handle broad queries
-    # Discovery mode workflows need ~15-20 iterations for complex queries like "all keys/assets"
+    # Fix for "need more steps" issue: increased from 10 to 30 to handle complex queries
+    # Discovery mode workflows need ~15-20 iterations for simple queries
+    # Complex queries with date filtering need ~25-30 iterations
     max_iterations: int = Field(
-        default=20,
+        default=30,
         ge=1,
         le=100,
-        description="Maximum agent iterations. Increased to handle broad queries like 'all keys/assets'."
+        description="Maximum agent iterations. Increased to handle complex queries with filtering."
     )
     timeout: int = Field(
         default=300,

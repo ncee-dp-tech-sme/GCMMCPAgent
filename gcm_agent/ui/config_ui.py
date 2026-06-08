@@ -1,6 +1,7 @@
 """Gradio-based configuration UI module for collecting and validating GCM agent settings."""
 
 # Made with Bob
+# 2026-06-08 20:48 UTC - Phase 2: Added configurable LLM parameters (temperature, max_tokens, top_p, top_k, decoding_method) to UI
 # 2026-06-05 22:14 UTC - Initial implementation of configuration UI with secure credential handling
 # 2026-06-05 21:03 UTC - Split Keycloak and GCM server configuration into separate tabs
 # 2026-06-05 21:50 UTC - Added WatsonX URL field and made model field editable
@@ -28,12 +29,12 @@ from gcm_agent.utils.logger import get_ui_logger
 logger = get_ui_logger()
 
 
-def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str, str, str, str, str, str, str, bool, bool, int, int, str]:
+def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str, str, str, str, str, str, str, bool, float, int, float, int, str, bool, int, int, str]:
     """
     Load existing configuration from secure storage.
     
     Returns:
-        Tuple of all configuration values for UI fields
+        Tuple of all configuration values for UI fields (including new LLM parameters)
     """
     try:
         config_manager = get_config_manager()
@@ -41,7 +42,7 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
         # Try to load configuration
         if not config_manager.load_config():
             logger.info("No existing configuration found")
-            return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, True, 10, 300, "No configuration found. Please enter your settings.")
+            return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 0.1, 4096, 0.95, 40, "greedy", False, 30, 300, "No configuration found. Please enter your settings.")
         
         # Load each section
         keycloak_config = config_manager.get_keycloak_config()
@@ -74,6 +75,11 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
             api_key,
             watsonx_config.model,
             watsonx_config.verify_ssl,
+            watsonx_config.temperature,
+            watsonx_config.max_tokens,
+            watsonx_config.top_p,
+            watsonx_config.top_k,
+            watsonx_config.decoding_method,
             agent_config.discovery_mode,
             agent_config.max_iterations,
             agent_config.timeout,
@@ -82,10 +88,10 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
         
     except (MissingConfigError, InvalidConfigError) as e:
         logger.warning(f"Configuration incomplete or invalid: {e}")
-        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, True, 10, 300, f"⚠️ Configuration incomplete: {str(e)}")
+        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 0.1, 4096, 0.95, 40, "greedy", False, 30, 300, f"⚠️ Configuration incomplete: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
-        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, True, 10, 300, f"❌ Error loading configuration: {str(e)}")
+        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 0.1, 4096, 0.95, 40, "greedy", False, 30, 300, f"❌ Error loading configuration: {str(e)}")
 
 
 def save_configuration(
@@ -105,6 +111,11 @@ def save_configuration(
     api_key: str,
     model: str,
     watsonx_verify_ssl: bool,
+    temperature: float,
+    max_tokens: int,
+    top_p: float,
+    top_k: int,
+    decoding_method: str,
     discovery_mode: bool,
     max_iterations: int,
     timeout: int,
@@ -149,6 +160,11 @@ def save_configuration(
             project_id=project_id,
             model=model,
             verify_ssl=watsonx_verify_ssl,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            top_p=top_p,
+            top_k=top_k,
+            decoding_method=decoding_method,
         )
         
         agent_config = AgentConfig(
@@ -361,6 +377,48 @@ def create_config_ui() -> gr.Blocks:
                 info="Verify SSL certificates for WatsonX (recommended)"
             )
             gr.Markdown("**Common models:** `ibm/granite-13b-chat-v2`, `ibm/granite-20b-multilingual`, `meta-llama/llama-3-70b-instruct`, `ibm/granite-3-8b-instruct`")
+            
+            gr.Markdown("### LLM Generation Parameters")
+            gr.Markdown("*Advanced settings for controlling LLM behavior. Defaults are optimized for tool selection accuracy.*")
+            
+            temperature = gr.Slider(
+                label="Temperature",
+                minimum=0.0,
+                maximum=2.0,
+                value=0.1,
+                step=0.1,
+                info="Sampling temperature (0.0=deterministic, 2.0=creative). Lower values improve tool selection accuracy."
+            )
+            max_tokens = gr.Slider(
+                label="Max Tokens",
+                minimum=256,
+                maximum=8192,
+                value=4096,
+                step=256,
+                info="Maximum tokens in response. Higher values allow complete reasoning."
+            )
+            top_p = gr.Slider(
+                label="Top P",
+                minimum=0.0,
+                maximum=1.0,
+                value=0.95,
+                step=0.05,
+                info="Nucleus sampling threshold. Controls diversity of token selection."
+            )
+            top_k = gr.Slider(
+                label="Top K",
+                minimum=1,
+                maximum=100,
+                value=40,
+                step=1,
+                info="Top-k sampling. Limits token selection to top k candidates."
+            )
+            decoding_method = gr.Radio(
+                label="Decoding Method",
+                choices=["greedy", "sample"],
+                value="greedy",
+                info="Decoding method: 'greedy' (deterministic) or 'sample' (stochastic)"
+            )
         
         with gr.Tab("⚙️ Agent Settings"):
             gr.Markdown("### Agent Behavior Configuration")
@@ -409,6 +467,7 @@ def create_config_ui() -> gr.Blocks:
                 gcm_url, gcm_hostname, gcm_verify_ssl,
                 username, password, client_id, client_secret,
                 watsonx_url, project_id, api_key, model, watsonx_verify_ssl,
+                temperature, max_tokens, top_p, top_k, decoding_method,
                 discovery_mode, max_iterations, timeout
             ],
             outputs=status
@@ -430,6 +489,7 @@ def create_config_ui() -> gr.Blocks:
                 gcm_url, gcm_hostname, gcm_verify_ssl,
                 username, password, client_id, client_secret,
                 watsonx_url, project_id, api_key, model, watsonx_verify_ssl,
+                temperature, max_tokens, top_p, top_k, decoding_method,
                 discovery_mode, max_iterations, timeout,
                 status
             ]

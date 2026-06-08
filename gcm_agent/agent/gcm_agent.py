@@ -8,15 +8,17 @@
 # 2026-06-05 21:51 UTC - Added WatsonX URL parameter to LLM initialization
 # 2026-06-05 22:05 UTC - Fixed to use ChatWatsonx instead of WatsonxLLM for tool binding support
 # 2026-06-06 02:43 UTC - Added WatsonX SSL verification configuration to LLM initialization
+# 2026-06-08 21:46 UTC - Added observability logging for tool selection and token tracking (Phase 4)
 
-from typing import List, Optional, AsyncGenerator, Union
+from typing import List, Optional, AsyncGenerator, Union, Dict, Any
 from datetime import datetime
+import time
 
 from langchain_ibm import ChatWatsonx
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, MessagesState, START, END
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.tools import Tool
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -24,7 +26,7 @@ from gcm_agent.mcp.client import GCMMCPClient
 from gcm_agent.mcp.tool_loader import GCMToolLoader
 from gcm_agent.config.config_manager import WatsonXConfig, OpenAIConfig, AgentConfig
 from gcm_agent.agent.prompts import get_system_prompt
-from gcm_agent.utils.logger import get_agent_logger
+from gcm_agent.utils.logger import get_agent_logger, get_observability_logger, timed_operation
 
 
 # Custom exceptions for agent operations
@@ -67,6 +69,7 @@ class GCMAgent:
         watsonx_api_key: Optional[str] = None,
         openai_config: Optional[OpenAIConfig] = None,
         openai_api_key: Optional[str] = None,
+        debug_ui: Optional[Any] = None,
     ):
         """
         Initialize GCM Agent with LangGraph.
@@ -80,18 +83,23 @@ class GCMAgent:
             watsonx_api_key: WatsonX API key (required if llm_provider="watsonx")
             openai_config: OpenAI configuration (required if llm_provider="openai")
             openai_api_key: OpenAI API key (required if llm_provider="openai")
+            debug_ui: Optional debug UI instance for real-time observability logs
         """
         self.mcp_client = mcp_client
         self.tool_loader = tool_loader
         self.agent_config = agent_config
         self.llm_provider = llm_provider.lower()
         self.logger = get_agent_logger()
+        self.obs_logger = get_observability_logger("gcm_agent.agent", debug_ui=debug_ui)
         
         # Store LLM-specific configs
         self.watsonx_config = watsonx_config
         self.watsonx_api_key = watsonx_api_key
         self.openai_config = openai_config
         self.openai_api_key = openai_api_key
+        
+        # Token tracking
+        self._cumulative_tokens = 0
         
         # Validate configuration based on provider
         if self.llm_provider == "watsonx":
@@ -121,7 +129,8 @@ class GCMAgent:
         if self.llm_provider == "watsonx":
             self.logger.debug(
                 f"Initializing ChatWatsonx with model: {self.watsonx_config.model} "
-                f"at {self.watsonx_config.url} (verify_ssl={self.watsonx_config.verify_ssl})"
+                f"at {self.watsonx_config.url} (verify_ssl={self.watsonx_config.verify_ssl}), "
+                f"temperature={self.watsonx_config.temperature}, max_tokens={self.watsonx_config.max_tokens}"
             )
             
             return ChatWatsonx(
@@ -131,10 +140,11 @@ class GCMAgent:
                 apikey=self.watsonx_api_key,
                 verify=self.watsonx_config.verify_ssl,
                 params={
-                    "max_tokens": 2048,
-                    "temperature": 0.7,
-                    "top_p": 0.9,
-                    "top_k": 50,
+                    "max_tokens": self.watsonx_config.max_tokens,
+                    "temperature": self.watsonx_config.temperature,
+                    "top_p": self.watsonx_config.top_p,
+                    "top_k": self.watsonx_config.top_k,
+                    "decoding_method": self.watsonx_config.decoding_method,
                 },
             )
         
@@ -197,32 +207,27 @@ class GCMAgent:
         Returns:
             Compiled StateGraph
         """
-        self.logger.debug("Creating LangGraph agent")
+        self.logger.debug(
+            f"Creating LangGraph agent with max_iterations={self.agent_config.max_iterations}"
+        )
         
         # Get system prompt based on discovery mode
         system_prompt = get_system_prompt(self.agent_config.discovery_mode)
         
         # Create agent using create_react_agent() wrapper (CRITICAL per AGENTS.md)
-        # System prompt will be injected via messages in the agent node
+        # Recursion limit is passed via config parameter in chat() and stream_chat() methods
         agent = create_react_agent(
             self.llm,
             self.tools,
         )
         
-        # Define async agent node with system prompt injection
-        async def agent_node(state: MessagesState) -> MessagesState:
-            """Agent node that processes messages with system prompt."""
-            # Inject system prompt as first message if not present
-            messages = state["messages"]
-            if not messages or not isinstance(messages[0], SystemMessage):
-                messages = [SystemMessage(content=system_prompt)] + messages
-            
-            result = await agent.ainvoke({"messages": messages})
-            return {"messages": result["messages"]}
+        # Store system prompt for injection at conversation start
+        self._system_prompt = system_prompt
+        self._system_prompt_injected = False
         
         # Build graph: START → agent → END
         graph = StateGraph(MessagesState)
-        graph.add_node("agent", agent_node)
+        graph.add_node("agent", agent)
         graph.add_edge(START, "agent")
         graph.add_edge("agent", END)
         
@@ -273,16 +278,31 @@ class GCMAgent:
             raise AgentExecutionError("Agent not initialized. Call initialize() first.")
         
         try:
+            start_time = time.time()
             self.logger.debug(f"Processing message: {message[:100]}...")
+            
+            # Inject system prompt once at start of conversation
+            if not self._system_prompt_injected and len(self.history) == 0:
+                self.history.append(SystemMessage(content=self._system_prompt))
+                self._system_prompt_injected = True
+                self.logger.debug("System prompt injected at conversation start")
             
             # Add user message to history
             self.history.append(HumanMessage(content=message))
             
             # Invoke agent
+            tool_selection_start = time.time()
             result = await self.graph.ainvoke(
                 {"messages": self.history},
                 config={"recursion_limit": self.agent_config.max_iterations},
             )
+            tool_selection_duration = (time.time() - tool_selection_start) * 1000
+            
+            # Extract tool selection information from messages
+            self._log_tool_selection_from_messages(message, result["messages"])
+            
+            # Extract token usage if available
+            self._log_token_usage(message, result)
             
             # Extract AI messages without tool_calls (per AGENTS.md)
             ai_messages = [
@@ -291,8 +311,26 @@ class GCMAgent:
                 if isinstance(msg, AIMessage) and not msg.tool_calls
             ]
             
-            # Update history with complete result
-            self.history = result["messages"]
+            # Update history with sliding window to prevent unbounded growth
+            # Filter out tool call messages and limit to last 20 messages (10 exchanges)
+            MAX_HISTORY_MESSAGES = 20
+            filtered_messages = [
+                msg for msg in result["messages"]
+                if not (isinstance(msg, AIMessage) and msg.tool_calls)
+            ]
+            self.history = filtered_messages[-MAX_HISTORY_MESSAGES:]
+            self.logger.debug(f"History size: {len(self.history)} messages (max: {MAX_HISTORY_MESSAGES})")
+            
+            # Log performance metrics
+            total_duration = (time.time() - start_time) * 1000
+            self.obs_logger.log_performance_metrics(
+                query=message,
+                total_duration_ms=total_duration,
+                breakdown={
+                    "tool_selection_and_execution_ms": tool_selection_duration,
+                    "response_generation_ms": total_duration - tool_selection_duration,
+                }
+            )
             
             # Return last AI message
             if ai_messages:
@@ -324,7 +362,14 @@ class GCMAgent:
             raise AgentExecutionError("Agent not initialized. Call initialize() first.")
         
         try:
+            start_time = time.time()
             self.logger.debug(f"Streaming response for message: {message[:100]}...")
+            
+            # Inject system prompt once at start of conversation
+            if not self._system_prompt_injected and len(self.history) == 0:
+                self.history.append(SystemMessage(content=self._system_prompt))
+                self._system_prompt_injected = True
+                self.logger.debug("System prompt injected at conversation start")
             
             # Add user message to history
             self.history.append(HumanMessage(content=message))
@@ -332,6 +377,7 @@ class GCMAgent:
             # Track if we successfully streamed any content
             streamed_content = False
             last_messages = None
+            all_messages = []
             
             # Stream agent responses
             async for chunk in self.graph.astream(
@@ -341,24 +387,55 @@ class GCMAgent:
                 if "agent" in chunk:
                     messages = chunk["agent"]["messages"]
                     last_messages = messages  # Keep track of last messages
+                    all_messages.extend(messages)  # Collect all messages for logging
                     for msg in messages:
                         if isinstance(msg, AIMessage) and not msg.tool_calls:
                             yield msg.content
                             streamed_content = True
             
-            # Update history after streaming
+            # Log tool selection and token usage after streaming completes
+            if all_messages:
+                self._log_tool_selection_from_messages(message, all_messages)
+                # Create a result dict for token logging
+                result = {"messages": all_messages}
+                self._log_token_usage(message, result)
+            
+            # Log performance metrics
+            total_duration = (time.time() - start_time) * 1000
+            self.obs_logger.log_performance_metrics(
+                query=message,
+                total_duration_ms=total_duration,
+                breakdown={"streaming_duration_ms": total_duration}
+            )
+            
+            # Update history after streaming with sliding window
             # Use last_messages from streaming if available to avoid re-invoking
             if last_messages is not None:
                 # Reconstruct history from streamed messages
                 # Remove the user message we added and replace with complete result
-                self.history = self.history[:-1] + last_messages
-                self.logger.debug("Updated history from streamed messages")
+                full_history = self.history[:-1] + last_messages
+                
+                # Apply sliding window and filter tool calls
+                MAX_HISTORY_MESSAGES = 20
+                filtered_messages = [
+                    msg for msg in full_history
+                    if not (isinstance(msg, AIMessage) and msg.tool_calls)
+                ]
+                self.history = filtered_messages[-MAX_HISTORY_MESSAGES:]
+                self.logger.debug(f"Updated history from streamed messages (size: {len(self.history)})")
             else:
                 # Fallback: try to invoke to get final state, but catch errors
                 try:
                     result = await self.graph.ainvoke({"messages": self.history})
-                    self.history = result["messages"]
-                    self.logger.debug("Updated history from final invocation")
+                    
+                    # Apply sliding window and filter tool calls
+                    MAX_HISTORY_MESSAGES = 20
+                    filtered_messages = [
+                        msg for msg in result["messages"]
+                        if not (isinstance(msg, AIMessage) and msg.tool_calls)
+                    ]
+                    self.history = filtered_messages[-MAX_HISTORY_MESSAGES:]
+                    self.logger.debug(f"Updated history from final invocation (size: {len(self.history)})")
                 except Exception as invoke_error:
                     # If final invocation fails but we streamed content, log warning but don't fail
                     if streamed_content:
@@ -388,9 +465,103 @@ class GCMAgent:
         ]
 
     def clear_history(self) -> None:
-        """Clear conversation history."""
+        """Clear conversation history and reset system prompt flag."""
         self.history = []
+        self._system_prompt_injected = False
         self.logger.info("Conversation history cleared")
+
+    def _log_tool_selection_from_messages(self, query: str, messages: List[BaseMessage]) -> None:
+        """
+        Extract and log tool selection information from message history.
+        
+        Args:
+            query: User query
+            messages: List of messages from agent execution
+        """
+        try:
+            # Find AI messages with tool calls
+            tool_call_messages = [
+                msg for msg in messages
+                if isinstance(msg, AIMessage) and msg.tool_calls
+            ]
+            
+            if not tool_call_messages:
+                return
+            
+            # Log each tool selection
+            for msg in tool_call_messages:
+                for tool_call in msg.tool_calls:
+                    tool_name = tool_call.get("name", "unknown")
+                    
+                    # Extract reasoning from message content if available
+                    reasoning = None
+                    if hasattr(msg, "content") and msg.content:
+                        # LLM sometimes includes reasoning before tool call
+                        reasoning = str(msg.content)[:500]  # Truncate long reasoning
+                    
+                    self.obs_logger.log_tool_selection(
+                        query=query,
+                        selected_tool=tool_name,
+                        reasoning=reasoning,
+                        confidence="high",  # Assume high confidence for executed tools
+                    )
+        except Exception as e:
+            self.logger.warning(f"Failed to log tool selection: {e}")
+    
+    def _log_token_usage(self, query: str, result: Dict[str, Any]) -> None:
+        """
+        Extract and log token usage from LLM response.
+        
+        Args:
+            query: User query
+            result: Result dictionary from agent execution
+        """
+        try:
+            # Try to extract token usage from response metadata
+            # Different LLM providers may have different metadata structures
+            messages = result.get("messages", [])
+            
+            for msg in messages:
+                if isinstance(msg, AIMessage) and hasattr(msg, "response_metadata"):
+                    metadata = msg.response_metadata
+                    
+                    # WatsonX format
+                    if "token_usage" in metadata:
+                        token_data = metadata["token_usage"]
+                        prompt_tokens = token_data.get("prompt_tokens", 0)
+                        completion_tokens = token_data.get("completion_tokens", 0)
+                        total_tokens = token_data.get("total_tokens", prompt_tokens + completion_tokens)
+                        
+                        self._cumulative_tokens += total_tokens
+                        
+                        self.obs_logger.log_token_usage(
+                            query=query,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=total_tokens,
+                            cumulative_tokens=self._cumulative_tokens,
+                        )
+                        return
+                    
+                    # OpenAI format
+                    if "usage" in metadata:
+                        usage = metadata["usage"]
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+                        total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+                        
+                        self._cumulative_tokens += total_tokens
+                        
+                        self.obs_logger.log_token_usage(
+                            query=query,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=total_tokens,
+                            cumulative_tokens=self._cumulative_tokens,
+                        )
+                        return
+        except Exception as e:
+            self.logger.warning(f"Failed to log token usage: {e}")
 
     async def close(self) -> None:
         """Close agent and cleanup resources."""

@@ -26,6 +26,7 @@ from dotenv import load_dotenv
 import gradio as gr
 
 from gcm_agent.ui import create_config_ui, create_chat_ui
+from gcm_agent.ui.debug_ui import create_debug_ui
 from gcm_agent.utils.logger import get_ui_logger
 
 # Load environment variables from .env file
@@ -44,10 +45,10 @@ def create_app() -> gr.TabbedInterface:
     """
     Create the main GCM Agent application.
     
-    Combines configuration and chat interfaces into a tabbed layout.
+    Combines configuration, chat, and debug interfaces into a tabbed layout.
     
     Returns:
-        Gradio TabbedInterface with configuration and chat tabs
+        Gradio TabbedInterface with configuration, chat, and debug tabs
     """
     logger.info("Creating GCM Agent application")
     
@@ -55,11 +56,12 @@ def create_app() -> gr.TabbedInterface:
         # Create individual UIs
         config_ui = create_config_ui()
         chat_ui = create_chat_ui()
+        debug_ui = create_debug_ui()
         
         # Combine into tabbed interface
         app = gr.TabbedInterface(
-            [config_ui, chat_ui],
-            ["⚙️ Configuration", "💬 Chat"],
+            [config_ui, chat_ui, debug_ui],
+            ["⚙️ Configuration", "💬 Chat", "🔍 Debug"],
             title="GCM Agent - IBM Guardium Cryptography Manager Assistant",
         )
         
