@@ -204,26 +204,17 @@ class GCMAgent:
         system_prompt = get_system_prompt(self.agent_config.discovery_mode)
         
         # Create agent using create_react_agent() wrapper (CRITICAL per AGENTS.md)
-        # System prompt will be injected via messages in the agent node
+        # System prompt injected ONCE via state_modifier (not per invocation)
         agent = create_react_agent(
             self.llm,
             self.tools,
+            state_modifier=SystemMessage(content=system_prompt),
         )
         
-        # Define async agent node with system prompt injection
-        async def agent_node(state: MessagesState) -> MessagesState:
-            """Agent node that processes messages with system prompt."""
-            # Inject system prompt as first message if not present
-            messages = state["messages"]
-            if not messages or not isinstance(messages[0], SystemMessage):
-                messages = [SystemMessage(content=system_prompt)] + messages
-            
-            result = await agent.ainvoke({"messages": messages})
-            return {"messages": result["messages"]}
-        
         # Build graph: START → agent → END
+        # No custom agent_node needed - system prompt handled by state_modifier
         graph = StateGraph(MessagesState)
-        graph.add_node("agent", agent_node)
+        graph.add_node("agent", agent)
         graph.add_edge(START, "agent")
         graph.add_edge("agent", END)
         
