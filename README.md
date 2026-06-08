@@ -5,6 +5,12 @@
 
 An AI-powered assistant that provides natural language interaction with IBM Guardium Cryptography Manager (GCM) through its embedded Model Context Protocol (MCP) server.
 
+Still work in progress and sometimes unreliable and unstable. Please install and test what tools do work for you.  Tools usually working are:
+- fetch all assets
+- fetch details of the asset with asset id xxx
+- fetch all assets discovered in the last x days
+- show details of certificate with crypto id x
+
 ## Overview
 
 The GCM Agent enables you to manage cryptographic assets, query key information, and perform complex operations using conversational commands instead of navigating through traditional interfaces. Built with LangChain and LangGraph, it provides an intelligent, secure, and user-friendly way to interact with GCM.
