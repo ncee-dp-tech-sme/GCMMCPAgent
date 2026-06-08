@@ -8,15 +8,17 @@
 # 2026-06-05 21:51 UTC - Added WatsonX URL parameter to LLM initialization
 # 2026-06-05 22:05 UTC - Fixed to use ChatWatsonx instead of WatsonxLLM for tool binding support
 # 2026-06-06 02:43 UTC - Added WatsonX SSL verification configuration to LLM initialization
+# 2026-06-08 21:46 UTC - Added observability logging for tool selection and token tracking (Phase 4)
 
-from typing import List, Optional, AsyncGenerator, Union
+from typing import List, Optional, AsyncGenerator, Union, Dict, Any
 from datetime import datetime
+import time
 
 from langchain_ibm import ChatWatsonx
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langgraph.graph import StateGraph, MessagesState, START, END
-from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.tools import Tool
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -24,7 +26,7 @@ from gcm_agent.mcp.client import GCMMCPClient
 from gcm_agent.mcp.tool_loader import GCMToolLoader
 from gcm_agent.config.config_manager import WatsonXConfig, OpenAIConfig, AgentConfig
 from gcm_agent.agent.prompts import get_system_prompt
-from gcm_agent.utils.logger import get_agent_logger
+from gcm_agent.utils.logger import get_agent_logger, get_observability_logger, timed_operation
 
 
 # Custom exceptions for agent operations
@@ -86,12 +88,16 @@ class GCMAgent:
         self.agent_config = agent_config
         self.llm_provider = llm_provider.lower()
         self.logger = get_agent_logger()
+        self.obs_logger = get_observability_logger("gcm_agent.agent")
         
         # Store LLM-specific configs
         self.watsonx_config = watsonx_config
         self.watsonx_api_key = watsonx_api_key
         self.openai_config = openai_config
         self.openai_api_key = openai_api_key
+        
+        # Token tracking
+        self._cumulative_tokens = 0
         
         # Validate configuration based on provider
         if self.llm_provider == "watsonx":
@@ -270,6 +276,7 @@ class GCMAgent:
             raise AgentExecutionError("Agent not initialized. Call initialize() first.")
         
         try:
+            start_time = time.time()
             self.logger.debug(f"Processing message: {message[:100]}...")
             
             # Inject system prompt once at start of conversation
@@ -282,10 +289,18 @@ class GCMAgent:
             self.history.append(HumanMessage(content=message))
             
             # Invoke agent
+            tool_selection_start = time.time()
             result = await self.graph.ainvoke(
                 {"messages": self.history},
                 config={"recursion_limit": self.agent_config.max_iterations},
             )
+            tool_selection_duration = (time.time() - tool_selection_start) * 1000
+            
+            # Extract tool selection information from messages
+            self._log_tool_selection_from_messages(message, result["messages"])
+            
+            # Extract token usage if available
+            self._log_token_usage(message, result)
             
             # Extract AI messages without tool_calls (per AGENTS.md)
             ai_messages = [
@@ -303,6 +318,17 @@ class GCMAgent:
             ]
             self.history = filtered_messages[-MAX_HISTORY_MESSAGES:]
             self.logger.debug(f"History size: {len(self.history)} messages (max: {MAX_HISTORY_MESSAGES})")
+            
+            # Log performance metrics
+            total_duration = (time.time() - start_time) * 1000
+            self.obs_logger.log_performance_metrics(
+                query=message,
+                total_duration_ms=total_duration,
+                breakdown={
+                    "tool_selection_and_execution_ms": tool_selection_duration,
+                    "response_generation_ms": total_duration - tool_selection_duration,
+                }
+            )
             
             # Return last AI message
             if ai_messages:
@@ -334,6 +360,7 @@ class GCMAgent:
             raise AgentExecutionError("Agent not initialized. Call initialize() first.")
         
         try:
+            start_time = time.time()
             self.logger.debug(f"Streaming response for message: {message[:100]}...")
             
             # Inject system prompt once at start of conversation
@@ -348,6 +375,7 @@ class GCMAgent:
             # Track if we successfully streamed any content
             streamed_content = False
             last_messages = None
+            all_messages = []
             
             # Stream agent responses
             async for chunk in self.graph.astream(
@@ -357,10 +385,26 @@ class GCMAgent:
                 if "agent" in chunk:
                     messages = chunk["agent"]["messages"]
                     last_messages = messages  # Keep track of last messages
+                    all_messages.extend(messages)  # Collect all messages for logging
                     for msg in messages:
                         if isinstance(msg, AIMessage) and not msg.tool_calls:
                             yield msg.content
                             streamed_content = True
+            
+            # Log tool selection and token usage after streaming completes
+            if all_messages:
+                self._log_tool_selection_from_messages(message, all_messages)
+                # Create a result dict for token logging
+                result = {"messages": all_messages}
+                self._log_token_usage(message, result)
+            
+            # Log performance metrics
+            total_duration = (time.time() - start_time) * 1000
+            self.obs_logger.log_performance_metrics(
+                query=message,
+                total_duration_ms=total_duration,
+                breakdown={"streaming_duration_ms": total_duration}
+            )
             
             # Update history after streaming with sliding window
             # Use last_messages from streaming if available to avoid re-invoking
@@ -443,3 +487,96 @@ __all__ = [
     "AgentExecutionError",
     "ToolExecutionError",
 ]
+
+    def _log_tool_selection_from_messages(self, query: str, messages: List[BaseMessage]) -> None:
+        """
+        Extract and log tool selection information from message history.
+        
+        Args:
+            query: User query
+            messages: List of messages from agent execution
+        """
+        try:
+            # Find AI messages with tool calls
+            tool_call_messages = [
+                msg for msg in messages
+                if isinstance(msg, AIMessage) and msg.tool_calls
+            ]
+            
+            if not tool_call_messages:
+                return
+            
+            # Log each tool selection
+            for msg in tool_call_messages:
+                for tool_call in msg.tool_calls:
+                    tool_name = tool_call.get("name", "unknown")
+                    
+                    # Extract reasoning from message content if available
+                    reasoning = None
+                    if hasattr(msg, "content") and msg.content:
+                        # LLM sometimes includes reasoning before tool call
+                        reasoning = str(msg.content)[:500]  # Truncate long reasoning
+                    
+                    self.obs_logger.log_tool_selection(
+                        query=query,
+                        selected_tool=tool_name,
+                        reasoning=reasoning,
+                        confidence="high",  # Assume high confidence for executed tools
+                    )
+        except Exception as e:
+            self.logger.warning(f"Failed to log tool selection: {e}")
+    
+    def _log_token_usage(self, query: str, result: Dict[str, Any]) -> None:
+        """
+        Extract and log token usage from LLM response.
+        
+        Args:
+            query: User query
+            result: Result dictionary from agent execution
+        """
+        try:
+            # Try to extract token usage from response metadata
+            # Different LLM providers may have different metadata structures
+            messages = result.get("messages", [])
+            
+            for msg in messages:
+                if isinstance(msg, AIMessage) and hasattr(msg, "response_metadata"):
+                    metadata = msg.response_metadata
+                    
+                    # WatsonX format
+                    if "token_usage" in metadata:
+                        token_data = metadata["token_usage"]
+                        prompt_tokens = token_data.get("prompt_tokens", 0)
+                        completion_tokens = token_data.get("completion_tokens", 0)
+                        total_tokens = token_data.get("total_tokens", prompt_tokens + completion_tokens)
+                        
+                        self._cumulative_tokens += total_tokens
+                        
+                        self.obs_logger.log_token_usage(
+                            query=query,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=total_tokens,
+                            cumulative_tokens=self._cumulative_tokens,
+                        )
+                        return
+                    
+                    # OpenAI format
+                    if "usage" in metadata:
+                        usage = metadata["usage"]
+                        prompt_tokens = usage.get("prompt_tokens", 0)
+                        completion_tokens = usage.get("completion_tokens", 0)
+                        total_tokens = usage.get("total_tokens", prompt_tokens + completion_tokens)
+                        
+                        self._cumulative_tokens += total_tokens
+                        
+                        self.obs_logger.log_token_usage(
+                            query=query,
+                            prompt_tokens=prompt_tokens,
+                            completion_tokens=completion_tokens,
+                            total_tokens=total_tokens,
+                            cumulative_tokens=self._cumulative_tokens,
+                        )
+                        return
+        except Exception as e:
+            self.logger.warning(f"Failed to log token usage: {e}")

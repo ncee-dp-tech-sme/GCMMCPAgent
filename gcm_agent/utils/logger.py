@@ -3,13 +3,18 @@
 # Made with Bob
 # 2026-06-05 19:52 UTC - Initial implementation of structured logging utility
 # 2026-06-05 21:31 UTC - Added environment variable support for log level and file logging configuration
+# 2026-06-08 21:45 UTC - Added structured logging for observability (Phase 4)
 
 import logging
 import sys
 import os
+import json
+import time
+import functools
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any, Callable
 from datetime import datetime
+import uuid
 
 
 class StructuredLogger:
@@ -268,6 +273,254 @@ def get_agent_logger() -> logging.Logger:
     log_file = _get_log_file_path("gcm_agent.agent")
     return get_logger("gcm_agent.agent", level=level, log_file=log_file)
 
+
+
+# Observability Features (Phase 4)
+
+class ObservabilityLogger:
+    """
+    Enhanced logging for observability with structured JSON logging,
+    tool selection reasoning, token tracking, and performance metrics.
+    """
+    
+    def __init__(self, logger: logging.Logger):
+        """
+        Initialize observability logger.
+        
+        Args:
+            logger: Base logger instance to use
+        """
+        self.logger = logger
+        self._session_id = str(uuid.uuid4())[:8]
+    
+    def log_tool_selection(
+        self,
+        query: str,
+        selected_tool: str,
+        reasoning: Optional[str] = None,
+        alternatives: Optional[List[str]] = None,
+        confidence: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Log tool selection with reasoning.
+        
+        Args:
+            query: User query
+            selected_tool: Name of selected tool
+            reasoning: LLM's reasoning for tool selection
+            alternatives: Alternative tools considered
+            confidence: Confidence level (high/medium/low)
+            metadata: Additional metadata
+        """
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "session_id": self._session_id,
+            "event": "tool_selection",
+            "query": query[:200],  # Truncate long queries
+            "selected_tool": selected_tool,
+            "reasoning": reasoning,
+            "alternatives_considered": alternatives or [],
+            "confidence": confidence or "unknown",
+        }
+        
+        if metadata:
+            log_data["metadata"] = metadata
+        
+        self.logger.info(f"TOOL_SELECTION: {json.dumps(log_data)}")
+    
+    def log_tool_execution(
+        self,
+        tool_name: str,
+        duration_ms: float,
+        success: bool,
+        error: Optional[str] = None,
+        result_summary: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Log tool execution results.
+        
+        Args:
+            tool_name: Name of executed tool
+            duration_ms: Execution duration in milliseconds
+            success: Whether execution succeeded
+            error: Error message if failed
+            result_summary: Brief summary of result
+            metadata: Additional metadata
+        """
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "session_id": self._session_id,
+            "event": "tool_execution",
+            "tool_name": tool_name,
+            "duration_ms": round(duration_ms, 2),
+            "success": success,
+        }
+        
+        if error:
+            log_data["error"] = error
+        if result_summary:
+            log_data["result_summary"] = result_summary[:200]  # Truncate
+        if metadata:
+            log_data["metadata"] = metadata
+        
+        level = logging.INFO if success else logging.ERROR
+        self.logger.log(level, f"TOOL_EXECUTION: {json.dumps(log_data)}")
+    
+    def log_token_usage(
+        self,
+        query: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        total_tokens: int,
+        cumulative_tokens: Optional[int] = None,
+        estimated_cost_usd: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Log token usage metrics.
+        
+        Args:
+            query: User query
+            prompt_tokens: Number of prompt tokens
+            completion_tokens: Number of completion tokens
+            total_tokens: Total tokens used
+            cumulative_tokens: Cumulative session tokens
+            estimated_cost_usd: Estimated cost in USD
+            metadata: Additional metadata
+        """
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "session_id": self._session_id,
+            "event": "token_usage",
+            "query": query[:200],  # Truncate
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+            "total_tokens": total_tokens,
+        }
+        
+        if cumulative_tokens is not None:
+            log_data["cumulative_session_tokens"] = cumulative_tokens
+        if estimated_cost_usd is not None:
+            log_data["estimated_cost_usd"] = round(estimated_cost_usd, 4)
+        if metadata:
+            log_data["metadata"] = metadata
+        
+        self.logger.info(f"TOKEN_USAGE: {json.dumps(log_data)}")
+    
+    def log_performance_metrics(
+        self,
+        query: str,
+        total_duration_ms: float,
+        breakdown: Optional[Dict[str, float]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Log performance metrics.
+        
+        Args:
+            query: User query
+            total_duration_ms: Total duration in milliseconds
+            breakdown: Timing breakdown by operation
+            metadata: Additional metadata
+        """
+        log_data = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "session_id": self._session_id,
+            "event": "performance_metrics",
+            "query": query[:200],  # Truncate
+            "total_duration_ms": round(total_duration_ms, 2),
+        }
+        
+        if breakdown:
+            log_data["timings"] = {k: round(v, 2) for k, v in breakdown.items()}
+        if metadata:
+            log_data["metadata"] = metadata
+        
+        self.logger.info(f"PERFORMANCE: {json.dumps(log_data)}")
+
+
+def timed_operation(operation_name: Optional[str] = None) -> Callable:
+    """
+    Decorator to time operations and log performance metrics.
+    
+    Args:
+        operation_name: Name of operation (defaults to function name)
+    
+    Returns:
+        Decorated function
+    
+    Example:
+        @timed_operation("load_tools")
+        async def load_tools(self):
+            # ... operation code ...
+            pass
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            start_time = time.time()
+            op_name = operation_name or func.__name__
+            
+            try:
+                result = await func(*args, **kwargs)
+                duration_ms = (time.time() - start_time) * 1000
+                
+                # Log if duration exceeds threshold (100ms)
+                if duration_ms > 100:
+                    logger = get_agent_logger()
+                    logger.debug(f"Operation '{op_name}' took {duration_ms:.2f}ms")
+                
+                return result
+            except Exception as e:
+                duration_ms = (time.time() - start_time) * 1000
+                logger = get_agent_logger()
+                logger.warning(f"Operation '{op_name}' failed after {duration_ms:.2f}ms: {e}")
+                raise
+        
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            start_time = time.time()
+            op_name = operation_name or func.__name__
+            
+            try:
+                result = func(*args, **kwargs)
+                duration_ms = (time.time() - start_time) * 1000
+                
+                # Log if duration exceeds threshold (100ms)
+                if duration_ms > 100:
+                    logger = get_agent_logger()
+                    logger.debug(f"Operation '{op_name}' took {duration_ms:.2f}ms")
+                
+                return result
+            except Exception as e:
+                duration_ms = (time.time() - start_time) * 1000
+                logger = get_agent_logger()
+                logger.warning(f"Operation '{op_name}' failed after {duration_ms:.2f}ms: {e}")
+                raise
+        
+        # Return appropriate wrapper based on function type
+        if functools.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    
+    return decorator
+
+
+def get_observability_logger(name: str) -> ObservabilityLogger:
+    """
+    Get observability logger for a module.
+    
+    Args:
+        name: Module name
+    
+    Returns:
+        ObservabilityLogger instance
+    """
+    base_logger = get_logger(name)
+    return ObservabilityLogger(base_logger)
 
 def get_ui_logger() -> logging.Logger:
     """Get logger for UI module."""
