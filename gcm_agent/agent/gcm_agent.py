@@ -131,10 +131,11 @@ class GCMAgent:
                 apikey=self.watsonx_api_key,
                 verify=self.watsonx_config.verify_ssl,
                 params={
-                    "max_tokens": 2048,
-                    "temperature": 0.7,
-                    "top_p": 0.9,
-                    "top_k": 50,
+                    "max_tokens": 4096,
+                    "temperature": 0.1,
+                    "top_p": 0.95,
+                    "top_k": 40,
+                    "decoding_method": "greedy",
                 },
             )
         
