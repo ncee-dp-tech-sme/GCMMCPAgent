@@ -1466,4 +1466,4 @@ python app.py
 
 **Document Version:** 1.0  
 **Last Updated:** 2026-06-05  
-**Maintained By:** GCM Agent Development Team
+**Maintained By:** Erwin Friethoff - Senior Security Architect

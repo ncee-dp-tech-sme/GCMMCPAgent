@@ -822,4 +822,4 @@ When reporting issues, include:
 
 **Document Version:** 2026-06-06
 **Last Updated:** 2026-06-06
-**Maintained By:** GCM Agent Development Team
+**Maintained By:** Erwin Friethoff - Senior Security Architect

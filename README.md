@@ -666,6 +666,6 @@ Built with:
 
 ---
 
-**Maintained By:** GCM Agent Development Team
+**Maintained By:** Erwin Friethoff - Senior Security Architect
 **Last Updated:** 2026-06-06
 **Version:** 2026-06-06

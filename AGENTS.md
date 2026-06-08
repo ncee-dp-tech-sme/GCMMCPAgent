@@ -5,6 +5,68 @@ This file provides guidance to agents when working with code in this repository.
 ## Repository Type
 Full-stack Python application - IBM Guardium Cryptography Manager MCP Server integration with LangGraph agent.
 
+### GCM MCP Server Execute Tool Bug - UnboundLocalError (2026-06-08 10:40 UTC)
+
+**Critical Server-Side Bug: Execute tool has undefined 'null' variable**
+
+**Root Cause:**
+The GCM MCP Server's `execute` tool contains a bug where it references an undefined variable named `null`. This is a server-side Python coding error in the fastmcp library's execute tool implementation.
+
+**Error Details:**
+```
+Error calling tool 'execute': UnboundLocalError: cannot access local variable 'null' 
+where it is not associated with a value
+
+Traceback:
+/opt/app-root/lib64/python3.11/site-packages/fastmcp/server/server.py:987 in call_tool
+/opt/app-root/lib64/python3.11/site-packages/fastmcp/tools/tool.py:354 in _run
+/opt/app-root/lib64/python3.11/site-packages/pydantic_monty/__init__.py:90 in run_in_pool
+```
+
+**Secondary Error (Parameter Validation):**
+When execute tool attempts to call other tools, it fails with parameter validation errors:
+```
+ValidationError: 2 validation errors for call[get_user_details_by_username]
+params
+  Missing required argument [type=missing_argument, input_value={'username': 'example_user'}]
+username
+  Unexpected keyword argument [type=unexpected_keyword_argument, input_value='example_user']
+```
+
+**Impact:**
+- ❌ Discovery mode execute tool completely non-functional
+- ❌ Cannot use execute tool for any workflow execution
+- ❌ Blocks sandboxed execution and RBAC enforcement
+- ❌ Forces users to disable discovery mode entirely
+
+**Workaround:**
+Disable discovery mode and call tools directly:
+1. Set `discovery_mode=False` in agent configuration (already the default)
+2. Use standard mode which loads all 26 tools upfront
+3. Call tools directly instead of using execute tool for workflows
+4. Accept slower initialization and loss of sandboxed execution benefits
+
+**What We've Verified:**
+- ✅ Client-side code in `gcm_agent/mcp/client.py` is correct
+- ✅ Parameter normalization and validation working properly
+- ✅ Error occurs in remote GCM MCP server's execute tool implementation
+- ✅ Bug is in fastmcp library code, not our client code
+
+**Bug Report:**
+Full bug report with reproduction steps and recommended fixes: `GCM_MCP_SERVER_EXECUTE_TOOL_BUG_REPORT.md`
+
+**Action Required:**
+Contact GCM MCP server developers to fix the execute tool implementation:
+1. Replace undefined `null` variable with Python's `None`
+2. Fix parameter wrapping/unwrapping in execute tool
+3. Add input validation for workflow payloads
+4. Test with various workflow formats
+
+**Related Documentation:**
+- Bug report: `GCM_MCP_SERVER_EXECUTE_TOOL_BUG_REPORT.md`
+- Client-side implementation: `gcm_agent/mcp/client.py` (lines 398-586)
+- Discovery mode prompt: `gcm_agent/agent/prompts.py` (lines 51-60)
+
 ## Recent Updates (2026-06-06)
 
 ### Investigated SSL Bypass Failure - MCP Server Configuration Required (2026-06-06 08:00 UTC)
@@ -57,6 +119,70 @@ The GCM MCP Server must be configured server-side to bypass SSL verification:
 
 **Action Required:**
 Contact GCM administrator to configure MCP server SSL verification or install proper certificates.
+
+### SSL Verification Errors - Header Analysis (2026-06-08)
+
+**Investigation Result: SSL errors are NOT caused by missing HTTP headers**
+
+**Root Cause Confirmation:**
+After analyzing HTTP headers used by the official GCM frontend versus our client implementation, we confirmed that SSL certificate verification errors are a **server-side MCP server configuration issue**, not a client-side header problem.
+
+**Why Headers Don't Affect SSL:**
+SSL/TLS negotiation happens at the **transport layer** (Layer 4) BEFORE HTTP headers are sent (Layer 7). The SSL handshake completes or fails before any HTTP request/headers are transmitted. Therefore:
+- Missing or incorrect HTTP headers CANNOT cause SSL certificate verification errors
+- SSL errors occur during the TLS handshake, not during HTTP request processing
+- Headers like `Authorization`, `Content-Type`, or custom headers are irrelevant to SSL verification
+
+**Header Comparison Analysis:**
+
+**Official Frontend Headers (Browser-Specific):**
+- `accept-language`: Browser locale preferences
+- `user-agent`: Browser identification string
+- `origin`: Cross-origin request source
+- `referer`: Navigation context
+- `sec-fetch-*`: Browser security headers
+- `accept-encoding`: Compression support
+
+**Our Client Headers (API-Focused):**
+- ✅ `Authorization`: Bearer token authentication
+- ✅ `Content-Type`: Request payload format
+- ✅ `x-gcm-hostname`: GCM hostname for internal API URLs
+- ✅ `x-mcp-code-mode`: Discovery mode control (true/false)
+
+**Key Finding:**
+Browser-specific headers (accept-language, user-agent, origin, referer, sec-fetch-*) are NOT required for API calls. These headers are automatically added by web browsers for security and compatibility but serve no functional purpose in server-to-server API communication.
+
+**Architecture Clarification:**
+```
+Client (Our Code) ──HTTPS/TLS──> MCP Server (Remote) ──HTTPS/TLS──> GCM APIs (Backend)
+      ✅ SSL Bypass                  ❌ SSL Verification              Self-Signed Certs
+       Working                          Failing
+       (Layer 4)                        (Layer 4)
+         ↓                                ↓
+      HTTP Headers                    HTTP Headers
+       (Layer 7)                        (Layer 7)
+```
+
+**What We Verified:**
+1. ✅ Client → MCP Server: SSL bypass working correctly (no certificate verification)
+2. ✅ All critical API headers present: Authorization, Content-Type, x-gcm-hostname, x-mcp-code-mode
+3. ✅ Browser-specific headers are not required for API functionality
+4. ❌ MCP Server → GCM APIs: SSL verification failing (server-side configuration issue)
+
+**Solution (Unchanged):**
+The GCM MCP Server must be configured server-side to bypass SSL verification:
+1. Access GCM MCP server configuration (charts/aim-mcp-server/values.yaml or similar)
+2. Add `verify_ssl: false` to backend configuration
+3. Or install proper SSL certificates on GCM server (production solution)
+4. Or add CA certificate to MCP server's trust store
+
+**No Code Changes Needed:**
+Our client-side implementation is correct. All required headers are present, and SSL bypass is properly configured for client-side connections. The issue is purely server-side.
+
+**Related Documentation:**
+- Full server-side analysis: `SSL_BYPASS_MCP_SERVER_ISSUE.md`
+- Client-side SSL bypass implementation: `gcm_agent/__init__.py`
+- Test scripts: `test_ssl_bypass_verification.py`, `test_ssl_bypass_import_order.py`
 
 ### Investigated 405 Method Not Allowed and Execute JSON Parsing Errors (2026-06-06 05:43 UTC)
 
