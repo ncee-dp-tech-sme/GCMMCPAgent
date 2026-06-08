@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-06-08 16:12 UTC - Added intelligent parameter defaults for pagination (page_number, page_size) to fix missing required parameters
 # 2026-06-06 05:43 UTC - Added execute payload normalization/validation and targeted 405 error enrichment for policy_violations_dashboard
 # 2026-06-06 04:38 UTC - Fixed async/await error in execute_tool by checking if result is a coroutine and awaiting it (fixes 'execute' tool TypeError)
 # 2026-06-06 04:10 UTC - Enhanced error logging in get_tools() to capture TaskGroup exception details with full traceback
@@ -436,6 +437,57 @@ class GCMMCPClient:
             f"Received keys: {list(normalized_arguments.keys()) if isinstance(normalized_arguments, dict) else 'non-dict'}"
         )
     
+    def _add_parameter_defaults(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Add intelligent defaults for common required parameters.
+        
+        Many GCM API tools require pagination parameters (page_number, page_size)
+        that LLMs often forget to provide. This method adds sensible defaults
+        when these parameters are missing.
+        
+        Args:
+            tool_name: Name of the tool being called
+            arguments: Original tool arguments
+            
+        Returns:
+            Arguments with defaults added where appropriate
+        """
+        # Create a copy to avoid modifying the original
+        enhanced_args = arguments.copy()
+        
+        # Check if this is a list/fetch operation that likely needs pagination
+        list_fetch_keywords = ['list', 'fetch', 'get_all', 'search', 'query', 'dashboard']
+        needs_pagination = any(keyword in tool_name.lower() for keyword in list_fetch_keywords)
+        
+        if needs_pagination:
+            # Check for nested body/params structure
+            if 'body' in enhanced_args and isinstance(enhanced_args['body'], dict):
+                body = enhanced_args['body']
+                if 'page_number' not in body:
+                    body['page_number'] = 1
+                    self.logger.info(f"Added default page_number=1 to tool '{tool_name}' body")
+                if 'page_size' not in body:
+                    body['page_size'] = 50
+                    self.logger.info(f"Added default page_size=50 to tool '{tool_name}' body")
+            elif 'params' in enhanced_args and isinstance(enhanced_args['params'], dict):
+                params = enhanced_args['params']
+                if 'page_number' not in params:
+                    params['page_number'] = 1
+                    self.logger.info(f"Added default page_number=1 to tool '{tool_name}' params")
+                if 'page_size' not in params:
+                    params['page_size'] = 50
+                    self.logger.info(f"Added default page_size=50 to tool '{tool_name}' params")
+            else:
+                # Top-level parameters
+                if 'page_number' not in enhanced_args:
+                    enhanced_args['page_number'] = 1
+                    self.logger.info(f"Added default page_number=1 to tool '{tool_name}'")
+                if 'page_size' not in enhanced_args:
+                    enhanced_args['page_size'] = 50
+                    self.logger.info(f"Added default page_size=50 to tool '{tool_name}'")
+        
+        return enhanced_args
+    
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Any:
         """
         Execute a tool on the MCP server.
@@ -482,6 +534,8 @@ class GCMMCPClient:
             unwrapped_arguments = self._normalize_execute_arguments(arguments)
         else:
             unwrapped_arguments = self._unwrap_params(arguments)
+            # Add intelligent defaults for common required parameters
+            unwrapped_arguments = self._add_parameter_defaults(tool_name, unwrapped_arguments)
         
         self.logger.info(f"Normalized arguments type: {type(unwrapped_arguments)}")
         self.logger.info(f"Normalized arguments: {unwrapped_arguments}")

@@ -3,6 +3,7 @@
 from datetime import datetime, timezone
 
 # Made with Bob
+# 2026-06-08 16:12 UTC - Added comprehensive parameter guidance to fix missing required parameters (page_number, page_size, etc.)
 # 2026-06-06 01:30 UTC - Added explicit instruction about single-value parameters to fix validation errors
 # 2026-06-06 00:24 UTC - Added dynamic current date/time injection to fix date calculation issues
 # 2026-06-05 22:11 UTC - Initial implementation of system prompts for GCM agent
@@ -24,6 +25,31 @@ CRITICAL INSTRUCTIONS:
 4. If an operation fails, explain why and suggest alternatives
 5. Always verify the results of operations before confirming success
 6. IMPORTANT: When a tool parameter accepts a literal value (e.g., 'PQC' or 'NON_PQC'), you MUST provide EXACTLY ONE value, NOT a list or multiple values. If you need data for multiple values, make separate tool calls.
+
+PARAMETER REQUIREMENTS - READ CAREFULLY:
+Many GCM API tools require MANDATORY parameters that you MUST provide:
+
+**Pagination Parameters (REQUIRED for list/fetch operations):**
+- `page_number`: Integer, starting from 1 (use 1 for first page)
+- `page_size`: Integer, number of items per page (use 50 as default, max 100)
+- Example: {"page_number": 1, "page_size": 50}
+
+**Common Required Parameters:**
+- `asset_type`: String literal like "key", "certificate", "secret" (check schema for valid values)
+- `filters`: Object containing filter criteria (may be required even if empty: {})
+- `body`: Request body object containing nested required fields
+
+**BEFORE calling ANY tool:**
+1. If in discovery mode, use `get_schema` to see ALL required parameters
+2. Check the schema's "required" field for mandatory parameters
+3. Provide ALL required parameters, even if they seem optional
+4. Use sensible defaults: page_number=1, page_size=50 for pagination
+
+**Common Mistakes to AVOID:**
+❌ Calling list/fetch tools without page_number and page_size
+❌ Omitting required filter objects (provide empty {} if no filters needed)
+❌ Assuming parameters are optional when schema marks them as required
+❌ Forgetting nested required fields inside body/params objects
 
 AVAILABLE TOOLS:
 Use the GCM MCP tools to interact with the Guardium Cryptography Manager system.
