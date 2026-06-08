@@ -283,8 +283,15 @@ class GCMAgent:
                 if isinstance(msg, AIMessage) and not msg.tool_calls
             ]
             
-            # Update history with complete result
-            self.history = result["messages"]
+            # Update history with sliding window to prevent unbounded growth
+            # Filter out tool call messages and limit to last 20 messages (10 exchanges)
+            MAX_HISTORY_MESSAGES = 20
+            filtered_messages = [
+                msg for msg in result["messages"]
+                if not (isinstance(msg, AIMessage) and msg.tool_calls)
+            ]
+            self.history = filtered_messages[-MAX_HISTORY_MESSAGES:]
+            self.logger.debug(f"History size: {len(self.history)} messages (max: {MAX_HISTORY_MESSAGES})")
             
             # Return last AI message
             if ai_messages:
@@ -338,19 +345,34 @@ class GCMAgent:
                             yield msg.content
                             streamed_content = True
             
-            # Update history after streaming
+            # Update history after streaming with sliding window
             # Use last_messages from streaming if available to avoid re-invoking
             if last_messages is not None:
                 # Reconstruct history from streamed messages
                 # Remove the user message we added and replace with complete result
-                self.history = self.history[:-1] + last_messages
-                self.logger.debug("Updated history from streamed messages")
+                full_history = self.history[:-1] + last_messages
+                
+                # Apply sliding window and filter tool calls
+                MAX_HISTORY_MESSAGES = 20
+                filtered_messages = [
+                    msg for msg in full_history
+                    if not (isinstance(msg, AIMessage) and msg.tool_calls)
+                ]
+                self.history = filtered_messages[-MAX_HISTORY_MESSAGES:]
+                self.logger.debug(f"Updated history from streamed messages (size: {len(self.history)})")
             else:
                 # Fallback: try to invoke to get final state, but catch errors
                 try:
                     result = await self.graph.ainvoke({"messages": self.history})
-                    self.history = result["messages"]
-                    self.logger.debug("Updated history from final invocation")
+                    
+                    # Apply sliding window and filter tool calls
+                    MAX_HISTORY_MESSAGES = 20
+                    filtered_messages = [
+                        msg for msg in result["messages"]
+                        if not (isinstance(msg, AIMessage) and msg.tool_calls)
+                    ]
+                    self.history = filtered_messages[-MAX_HISTORY_MESSAGES:]
+                    self.logger.debug(f"Updated history from final invocation (size: {len(self.history)})")
                 except Exception as invoke_error:
                     # If final invocation fails but we streamed content, log warning but don't fail
                     if streamed_content:
