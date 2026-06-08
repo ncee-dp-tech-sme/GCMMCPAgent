@@ -468,26 +468,6 @@ class GCMAgent:
         self._system_prompt_injected = False
         self.logger.info("Conversation history cleared")
 
-    async def close(self) -> None:
-        """Close agent and cleanup resources."""
-        try:
-            self.logger.info("Closing GCM Agent")
-            await self.mcp_client.disconnect()
-            self.history = []
-            self.logger.info("GCM Agent closed successfully")
-        except Exception as e:
-            self.logger.error(f"Error closing agent: {e}")
-            raise AgentError(f"Error closing agent: {e}") from e
-
-
-__all__ = [
-    "GCMAgent",
-    "AgentError",
-    "AgentInitializationError",
-    "AgentExecutionError",
-    "ToolExecutionError",
-]
-
     def _log_tool_selection_from_messages(self, query: str, messages: List[BaseMessage]) -> None:
         """
         Extract and log tool selection information from message history.
@@ -580,3 +560,23 @@ __all__ = [
                         return
         except Exception as e:
             self.logger.warning(f"Failed to log token usage: {e}")
+
+    async def close(self) -> None:
+        """Close agent and cleanup resources."""
+        try:
+            self.logger.info("Closing GCM Agent")
+            await self.mcp_client.disconnect()
+            self.history = []
+            self.logger.info("GCM Agent closed successfully")
+        except Exception as e:
+            self.logger.error(f"Error closing agent: {e}")
+            raise AgentError(f"Error closing agent: {e}") from e
+
+
+__all__ = [
+    "GCMAgent",
+    "AgentError",
+    "AgentInitializationError",
+    "AgentExecutionError",
+    "ToolExecutionError",
+]
