@@ -69,6 +69,7 @@ class GCMAgent:
         watsonx_api_key: Optional[str] = None,
         openai_config: Optional[OpenAIConfig] = None,
         openai_api_key: Optional[str] = None,
+        debug_ui: Optional[Any] = None,
     ):
         """
         Initialize GCM Agent with LangGraph.
@@ -82,13 +83,14 @@ class GCMAgent:
             watsonx_api_key: WatsonX API key (required if llm_provider="watsonx")
             openai_config: OpenAI configuration (required if llm_provider="openai")
             openai_api_key: OpenAI API key (required if llm_provider="openai")
+            debug_ui: Optional debug UI instance for real-time observability logs
         """
         self.mcp_client = mcp_client
         self.tool_loader = tool_loader
         self.agent_config = agent_config
         self.llm_provider = llm_provider.lower()
         self.logger = get_agent_logger()
-        self.obs_logger = get_observability_logger("gcm_agent.agent")
+        self.obs_logger = get_observability_logger("gcm_agent.agent", debug_ui=debug_ui)
         
         # Store LLM-specific configs
         self.watsonx_config = watsonx_config

@@ -5,6 +5,7 @@
 # 2026-06-05 21:31 UTC - Added environment variable support for log level and file logging configuration
 # 2026-06-08 21:45 UTC - Added structured logging for observability (Phase 4)
 # 2026-06-08 21:56 UTC - Fixed import: use inspect.iscoroutinefunction instead of functools
+# 2026-06-08 22:08 UTC - Integrated ObservabilityLogger with debug UI
 
 import logging
 import sys
@@ -14,9 +15,12 @@ import time
 import functools
 import inspect
 from pathlib import Path
-from typing import Optional, Dict, Any, Callable
+from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
 from datetime import datetime
 import uuid
+
+if TYPE_CHECKING:
+    from gcm_agent.ui.debug_ui import DebugUI
 
 
 class StructuredLogger:
@@ -285,15 +289,31 @@ class ObservabilityLogger:
     tool selection reasoning, token tracking, and performance metrics.
     """
     
-    def __init__(self, logger: logging.Logger):
+    def __init__(self, logger: logging.Logger, debug_ui: Optional['DebugUI'] = None):
         """
         Initialize observability logger.
         
         Args:
             logger: Base logger instance to use
+            debug_ui: Optional debug UI instance for real-time log display
         """
         self.logger = logger
         self._session_id = str(uuid.uuid4())[:8]
+        self._debug_ui = debug_ui
+    
+    def _send_to_debug_ui(self, log_type: str, data: Dict[str, Any]) -> None:
+        """
+        Send log entry to debug UI if available.
+        
+        Args:
+            log_type: Type of log (tool_selection, tool_execution, token_usage, performance)
+            data: Log data dictionary
+        """
+        if self._debug_ui is not None:
+            try:
+                self._debug_ui.add_log_entry(log_type, data)
+            except Exception as e:
+                self.logger.warning(f"Failed to send log to debug UI: {e}")
     
     def log_tool_selection(
         self,
@@ -330,6 +350,7 @@ class ObservabilityLogger:
             log_data["metadata"] = metadata
         
         self.logger.info(f"TOOL_SELECTION: {json.dumps(log_data)}")
+        self._send_to_debug_ui("tool_selection", log_data)
     
     def log_tool_execution(
         self,
@@ -369,6 +390,7 @@ class ObservabilityLogger:
         
         level = logging.INFO if success else logging.ERROR
         self.logger.log(level, f"TOOL_EXECUTION: {json.dumps(log_data)}")
+        self._send_to_debug_ui("tool_execution", log_data)
     
     def log_token_usage(
         self,
@@ -410,6 +432,7 @@ class ObservabilityLogger:
             log_data["metadata"] = metadata
         
         self.logger.info(f"TOKEN_USAGE: {json.dumps(log_data)}")
+        self._send_to_debug_ui("token_usage", log_data)
     
     def log_performance_metrics(
         self,
@@ -441,6 +464,7 @@ class ObservabilityLogger:
             log_data["metadata"] = metadata
         
         self.logger.info(f"PERFORMANCE: {json.dumps(log_data)}")
+        self._send_to_debug_ui("performance", log_data)
 
 
 def timed_operation(operation_name: Optional[str] = None) -> Callable:
@@ -511,18 +535,19 @@ def timed_operation(operation_name: Optional[str] = None) -> Callable:
     return decorator
 
 
-def get_observability_logger(name: str) -> ObservabilityLogger:
+def get_observability_logger(name: str, debug_ui: Optional['DebugUI'] = None) -> ObservabilityLogger:
     """
     Get observability logger for a module.
     
     Args:
         name: Module name
+        debug_ui: Optional debug UI instance for real-time log display
     
     Returns:
         ObservabilityLogger instance
     """
     base_logger = get_logger(name)
-    return ObservabilityLogger(base_logger)
+    return ObservabilityLogger(base_logger, debug_ui=debug_ui)
 
 def get_ui_logger() -> logging.Logger:
     """Get logger for UI module."""

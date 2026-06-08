@@ -4,6 +4,7 @@
 # 2026-06-05 22:08 UTC - Fixed Gradio message format to use dict format with 'role' and 'content' keys (Gradio 6.0+)
 # 2026-06-05 22:15 UTC - Initial implementation of chat UI with streaming support
 # 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
+# 2026-06-08 22:09 UTC - Integrated debug UI for real-time observability logs
 
 from typing import List, Tuple, Optional, AsyncGenerator, Dict
 import json
@@ -15,6 +16,7 @@ from gcm_agent.mcp.client import GCMMCPClient
 from gcm_agent.mcp.tool_loader import GCMToolLoader
 from gcm_agent.config.config_manager import get_config_manager, MissingConfigError
 from gcm_agent.utils.logger import get_ui_logger
+from gcm_agent.ui.debug_ui import get_debug_ui_instance
 
 
 logger = get_ui_logger()
@@ -140,8 +142,9 @@ async def initialize_agent() -> str:
             client_secret=client_secret,
         )
         
-        # Create agent
+        # Create agent with debug UI integration
         logger.debug(f"Creating GCM Agent with {llm_config.provider} LLM")
+        debug_ui = get_debug_ui_instance()
         _agent_state.agent = GCMAgent(
             mcp_client=_agent_state.mcp_client,
             tool_loader=_agent_state.tool_loader,
@@ -151,6 +154,7 @@ async def initialize_agent() -> str:
             watsonx_api_key=watsonx_api_key,
             openai_config=openai_config,
             openai_api_key=openai_api_key,
+            debug_ui=debug_ui,
         )
         
         # Initialize agent
