@@ -207,11 +207,10 @@ class GCMAgent:
         system_prompt = get_system_prompt(self.agent_config.discovery_mode)
         
         # Create agent using create_react_agent() wrapper (CRITICAL per AGENTS.md)
-        # Phase 2: Pass max_iterations from config to properly limit recursion
+        # Recursion limit is passed via config parameter in chat() and stream_chat() methods
         agent = create_react_agent(
             self.llm,
             self.tools,
-            state_modifier=system_prompt,
         )
         
         # Store system prompt for injection at conversation start
