@@ -7,7 +7,13 @@ Full-stack Python application - IBM Guardium Cryptography Manager MCP Server int
 
 
 
-### Phase 4: Observability & Debugging (2026-06-08 21:47 UTC)
+### Phase 4: Observability & Debugging (2026-06-08 21:47 UTC) - COMPLETED ✓
+
+**Bug Fixes (2026-06-08 21:56 UTC)**
+- Fixed `AttributeError` in `@timed_operation` decorator
+- Changed `functools.iscoroutinefunction` to `inspect.iscoroutinefunction`
+- Added `inspect` import to `gcm_agent/utils/logger.py`
+- All 19 observability tests now pass successfully
 
 **Structured Observability Logging**
 - Implemented comprehensive JSON-structured logging system for debugging and monitoring
