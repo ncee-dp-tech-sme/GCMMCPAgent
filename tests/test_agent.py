@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from gcm_agent.agent.gcm_agent import GCMAgent
 from gcm_agent.agent.prompts import get_system_prompt
+from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig, LLMProviderConfig
 
 
 class TestGCMAgent:
@@ -14,8 +15,6 @@ class TestGCMAgent:
     @patch('langchain.agents.create_agent')
     async def test_initialize_agent(self, mock_create_agent, mock_llm_class):
         """Test agent initialization with LLM and tools."""
-        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
-        
         mock_llm = Mock()
         mock_llm_class.return_value = mock_llm
         
@@ -27,7 +26,6 @@ class TestGCMAgent:
         mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
         
         watsonx_config = WatsonXConfig(
-            api_key='test_api_key',
             project_id='test_project_id',
             model='ibm/granite-13b-chat-v2'
         )
@@ -35,13 +33,17 @@ class TestGCMAgent:
             discovery_mode=False,
             max_iterations=10
         )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
         
         agent = GCMAgent(
             mcp_client=mock_mcp_client,
             tool_loader=mock_tool_loader,
-            watsonx_config=watsonx_config,
-            api_key='test_api_key',
-            agent_config=agent_config
+            agent_config=agent_config,
+            llm_config=llm_config
         )
         
         await agent.initialize()
@@ -54,7 +56,6 @@ class TestGCMAgent:
     @patch('langchain.agents.create_agent')
     async def test_chat(self, mock_create_agent, mock_llm_class):
         """Test processing a user message through the agent."""
-        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
         from langchain_core.messages import AIMessage
         
         mock_llm = Mock()
@@ -73,7 +74,6 @@ class TestGCMAgent:
         mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
         
         watsonx_config = WatsonXConfig(
-            api_key='test_api_key',
             project_id='test_project_id',
             model='ibm/granite-13b-chat-v2'
         )
@@ -81,13 +81,17 @@ class TestGCMAgent:
             discovery_mode=False,
             max_iterations=10
         )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
         
         agent = GCMAgent(
             mcp_client=mock_mcp_client,
             tool_loader=mock_tool_loader,
-            watsonx_config=watsonx_config,
-            api_key='test_api_key',
-            agent_config=agent_config
+            agent_config=agent_config,
+            llm_config=llm_config
         )
         
         await agent.initialize()
@@ -101,8 +105,6 @@ class TestGCMAgent:
     @patch('langchain.agents.create_agent')
     async def test_agent_with_tools(self, mock_create_agent, mock_llm_class):
         """Test agent initialization with multiple tools."""
-        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
-        
         mock_llm = Mock()
         mock_llm_class.return_value = mock_llm
         
@@ -118,7 +120,6 @@ class TestGCMAgent:
         ]
         
         watsonx_config = WatsonXConfig(
-            api_key='test_api_key',
             project_id='test_project_id',
             model='ibm/granite-13b-chat-v2'
         )
@@ -126,13 +127,17 @@ class TestGCMAgent:
             discovery_mode=False,
             max_iterations=10
         )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
         
         agent = GCMAgent(
             mcp_client=mock_mcp_client,
             tool_loader=mock_tool_loader,
-            watsonx_config=watsonx_config,
-            api_key='test_api_key',
-            agent_config=agent_config
+            agent_config=agent_config,
+            llm_config=llm_config
         )
         
         await agent.initialize()
@@ -146,7 +151,6 @@ class TestGCMAgent:
     @patch('langchain.agents.create_agent')
     async def test_agent_history(self, mock_create_agent, mock_llm_class):
         """Test agent maintains conversation history."""
-        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
         from langchain_core.messages import AIMessage
         
         mock_llm = Mock()
@@ -165,7 +169,6 @@ class TestGCMAgent:
         mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
         
         watsonx_config = WatsonXConfig(
-            api_key='test_api_key',
             project_id='test_project_id',
             model='ibm/granite-13b-chat-v2'
         )
@@ -173,13 +176,17 @@ class TestGCMAgent:
             discovery_mode=False,
             max_iterations=10
         )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
         
         agent = GCMAgent(
             mcp_client=mock_mcp_client,
             tool_loader=mock_tool_loader,
-            watsonx_config=watsonx_config,
-            api_key='test_api_key',
-            agent_config=agent_config
+            agent_config=agent_config,
+            llm_config=llm_config
         )
         
         await agent.initialize()
@@ -210,8 +217,6 @@ class TestSystemPrompt:
     @patch('gcm_agent.agent.gcm_agent.ChatWatsonx')
     def test_initialize_llm_passes_verify_ssl(self, mock_chat_watsonx):
         """Test WatsonX SSL verification is passed to ChatWatsonx."""
-        from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
-        
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
         
@@ -224,13 +229,17 @@ class TestSystemPrompt:
             discovery_mode=False,
             max_iterations=10
         )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
         
         agent = GCMAgent(
             mcp_client=mock_mcp_client,
             tool_loader=mock_tool_loader,
-            watsonx_config=watsonx_config,
-            api_key='test_api_key',
-            agent_config=agent_config
+            agent_config=agent_config,
+            llm_config=llm_config
         )
         
         agent._initialize_llm()

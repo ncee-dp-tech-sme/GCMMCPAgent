@@ -1,5 +1,139 @@
 # Changelog
 
+## 2026-06-09 - GCMAgent.__init__ Refactoring
+
+### Breaking Changes
+**Refactored `GCMAgent.__init__` method with improved architecture**
+
+The `GCMAgent` constructor has been refactored to use a unified `LLMProviderConfig` parameter instead of separate provider-specific parameters. This is a **breaking change** that affects all code instantiating `GCMAgent`.
+
+#### What Changed
+
+**Before (Old API):**
+```python
+agent = GCMAgent(
+    mcp_client=mcp_client,
+    tool_loader=tool_loader,
+    agent_config=agent_config,
+    llm_provider="watsonx",
+    watsonx_config=watsonx_config,
+    watsonx_api_key=api_key,
+    openai_config=None,
+    openai_api_key=None,
+    debug_ui=debug_ui,
+)
+```
+
+**After (New API):**
+```python
+from gcm_agent.config.config_manager import LLMProviderConfig
+
+llm_config = LLMProviderConfig(
+    provider="watsonx",
+    watsonx_config=watsonx_config,
+    watsonx_api_key=api_key,
+)
+
+agent = GCMAgent(
+    mcp_client=mcp_client,
+    tool_loader=tool_loader,
+    agent_config=agent_config,
+    llm_config=llm_config,
+    debug_ui=debug_ui,
+)
+```
+
+#### Improvements Implemented
+
+1. **Extracted Validation Helper** - Provider validation logic moved to `_validate_provider_config()` method
+   - Uses dictionary-based requirements mapping for cleaner code
+   - Easier to add new LLM providers
+   - More maintainable and testable
+
+2. **Delayed Attribute Initialization** - Component attributes initialized AFTER validation
+   - Prevents partial object creation on validation failure
+   - Follows "fail fast" principle
+   - Cleaner error handling
+
+3. **Consolidated LLM Configuration** - New `LLMProviderConfig` dataclass
+   - Reduces constructor parameters from 8 to 5 (37.5% reduction)
+   - Encapsulates related configuration
+   - Pydantic validation at config level
+   - Clearer intent: "here's the LLM setup"
+
+4. **Config Storage via Property** - Added `current_provider_config` property
+   - Provides clean access to active provider's configuration
+   - Scales better with additional providers
+   - Used by `_initialize_llm()` method
+
+#### Migration Guide
+
+**For Application Code:**
+```python
+# Update imports
+from gcm_agent.config.config_manager import LLMProviderConfig
+
+# Create LLM config object
+llm_config = LLMProviderConfig(
+    provider=llm_provider,  # "watsonx" or "openai"
+    watsonx_config=watsonx_config if llm_provider == "watsonx" else None,
+    watsonx_api_key=watsonx_api_key if llm_provider == "watsonx" else None,
+    openai_config=openai_config if llm_provider == "openai" else None,
+    openai_api_key=openai_api_key if llm_provider == "openai" else None,
+)
+
+# Pass to GCMAgent
+agent = GCMAgent(
+    mcp_client=mcp_client,
+    tool_loader=tool_loader,
+    agent_config=agent_config,
+    llm_config=llm_config,
+    debug_ui=debug_ui,
+)
+```
+
+**For Tests:**
+```python
+from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig, LLMProviderConfig
+
+watsonx_config = WatsonXConfig(
+    project_id='test_project_id',
+    model='ibm/granite-13b-chat-v2'
+)
+agent_config = AgentConfig(discovery_mode=False, max_iterations=10)
+llm_config = LLMProviderConfig(
+    provider='watsonx',
+    watsonx_config=watsonx_config,
+    watsonx_api_key='test_api_key'
+)
+
+agent = GCMAgent(
+    mcp_client=mock_mcp_client,
+    tool_loader=mock_tool_loader,
+    agent_config=agent_config,
+    llm_config=llm_config
+)
+```
+
+#### Files Modified
+- `gcm_agent/config/config_manager.py` - Added `LLMProviderConfig` class
+- `gcm_agent/agent/gcm_agent.py` - Refactored `__init__` and `_initialize_llm` methods
+- `gcm_agent/agent/__init__.py` - Updated `create_gcm_agent()` helper function
+- `gcm_agent/ui/chat_ui.py` - Updated agent instantiation
+- `tests/test_agent.py` - Updated all test cases
+- `tests/test_json_parsing_error.py` - Updated agent instantiation
+- `tests/test_gcm_hostname_fix.py` - Updated agent instantiation
+
+#### Benefits
+- **Cleaner API**: Fewer parameters, clearer intent
+- **Better Validation**: Pydantic validation at config level
+- **Easier Extension**: Adding new providers requires minimal changes
+- **Improved Testability**: Validation logic isolated and testable
+- **Fail Fast**: Validation errors occur before any initialization
+
+---
+
+
 All notable changes to the GCM Agent project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

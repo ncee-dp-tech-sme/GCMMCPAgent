@@ -227,6 +227,60 @@ class LLMConfig(BaseModel):
         validate_assignment = True
 
 
+class LLMProviderConfig(BaseModel):
+    """
+    Unified LLM provider configuration.
+    
+    Consolidates provider-specific configs and API keys into a single object
+    for cleaner agent initialization.
+    """
+    
+    provider: str = Field(..., description="LLM provider name (watsonx/openai)")
+    watsonx_config: Optional[WatsonXConfig] = None
+    watsonx_api_key: Optional[str] = None
+    openai_config: Optional[OpenAIConfig] = None
+    openai_api_key: Optional[str] = None
+    
+    @validator("provider")
+    def validate_provider(cls, v):
+        """Validate provider is supported."""
+        if v.lower() not in ["watsonx", "openai"]:
+            raise ValueError(f"Unsupported provider: {v}. Must be 'watsonx' or 'openai'")
+        return v.lower()
+    
+    @validator("watsonx_config", always=True)
+    def validate_watsonx_config(cls, v, values):
+        """Validate WatsonX config when provider is watsonx."""
+        if values.get("provider") == "watsonx" and not v:
+            raise ValueError("watsonx_config required when provider is 'watsonx'")
+        return v
+    
+    @validator("watsonx_api_key", always=True)
+    def validate_watsonx_api_key(cls, v, values):
+        """Validate WatsonX API key when provider is watsonx."""
+        if values.get("provider") == "watsonx" and not v:
+            raise ValueError("watsonx_api_key required when provider is 'watsonx'")
+        return v
+    
+    @validator("openai_config", always=True)
+    def validate_openai_config(cls, v, values):
+        """Validate OpenAI config when provider is openai."""
+        if values.get("provider") == "openai" and not v:
+            raise ValueError("openai_config required when provider is 'openai'")
+        return v
+    
+    @validator("openai_api_key", always=True)
+    def validate_openai_api_key(cls, v, values):
+        """Validate OpenAI API key when provider is openai."""
+        if values.get("provider") == "openai" and not v:
+            raise ValueError("openai_api_key required when provider is 'openai'")
+        return v
+    
+    class Config:
+        """Pydantic model configuration."""
+        validate_assignment = True
+
+
 class AgentConfig(BaseModel):
     """Configuration for agent behavior."""
     

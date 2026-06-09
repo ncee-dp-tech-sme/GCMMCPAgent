@@ -142,6 +142,17 @@ async def initialize_agent() -> str:
             client_secret=client_secret,
         )
         
+        # Create unified LLM provider config
+        from gcm_agent.config.config_manager import LLMProviderConfig
+        
+        llm_provider_config = LLMProviderConfig(
+            provider=llm_config.provider,
+            watsonx_config=watsonx_config,
+            watsonx_api_key=watsonx_api_key,
+            openai_config=openai_config,
+            openai_api_key=openai_api_key,
+        )
+        
         # Create agent with debug UI integration
         logger.debug(f"Creating GCM Agent with {llm_config.provider} LLM")
         debug_ui = get_debug_ui_instance()
@@ -149,11 +160,7 @@ async def initialize_agent() -> str:
             mcp_client=_agent_state.mcp_client,
             tool_loader=_agent_state.tool_loader,
             agent_config=agent_config,
-            llm_provider=llm_config.provider,
-            watsonx_config=watsonx_config,
-            watsonx_api_key=watsonx_api_key,
-            openai_config=openai_config,
-            openai_api_key=openai_api_key,
+            llm_config=llm_provider_config,
             debug_ui=debug_ui,
         )
         

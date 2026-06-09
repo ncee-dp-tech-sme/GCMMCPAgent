@@ -72,24 +72,27 @@ async def test_json_parsing_error():
         
         # Create agent
         logger.info("Creating agent...")
+        from gcm_agent.config.config_manager import LLMProviderConfig
+        
         if config.llm.provider == "watsonx":
-            agent = GCMAgent(
-                mcp_client=mcp_client,
-                tool_loader=tool_loader,
-                agent_config=config.agent,
-                llm_provider="watsonx",
+            llm_config = LLMProviderConfig(
+                provider="watsonx",
                 watsonx_config=config.llm.watsonx,
                 watsonx_api_key=os.getenv("LLM_WATSONX_API_KEY"),
             )
         else:
-            agent = GCMAgent(
-                mcp_client=mcp_client,
-                tool_loader=tool_loader,
-                agent_config=config.agent,
-                llm_provider="openai",
+            llm_config = LLMProviderConfig(
+                provider="openai",
                 openai_config=config.llm.openai,
                 openai_api_key=os.getenv("OPENAI_API_KEY"),
             )
+        
+        agent = GCMAgent(
+            mcp_client=mcp_client,
+            tool_loader=tool_loader,
+            agent_config=config.agent,
+            llm_config=llm_config,
+        )
         
         # Initialize agent
         logger.info("Initializing agent...")

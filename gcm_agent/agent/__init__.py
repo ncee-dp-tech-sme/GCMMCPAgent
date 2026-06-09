@@ -1,6 +1,7 @@
 """Agent package for LangGraph-based orchestration of GCM MCP tools and LLM interactions."""
 
 # Made with Bob
+# 2026-06-09 19:23 UTC - Updated create_gcm_agent to use LLMProviderConfig
 # 2026-06-05 22:12 UTC - Initial implementation of agent package with helper function
 
 from gcm_agent.agent.gcm_agent import (
@@ -21,11 +22,10 @@ from gcm_agent.agent.prompts import (
 async def create_gcm_agent(
     gcm_config,
     auth_config,
-    watsonx_config,
+    llm_config,
     agent_config,
     password: str,
     client_secret: str,
-    watsonx_api_key: str,
 ):
     """
     Create and initialize GCM Agent with all dependencies.
@@ -37,11 +37,10 @@ async def create_gcm_agent(
     Args:
         gcm_config: GCM server configuration (GCMServerConfig)
         auth_config: Authentication configuration (AuthConfig)
-        watsonx_config: WatsonX configuration (WatsonXConfig)
+        llm_config: Unified LLM provider configuration (LLMProviderConfig)
         agent_config: Agent configuration (AgentConfig)
         password: GCM user password
         client_secret: OAuth2 client secret
-        watsonx_api_key: WatsonX API key
     
     Returns:
         Initialized GCM Agent ready for use
@@ -52,20 +51,26 @@ async def create_gcm_agent(
     
     Example:
         >>> from gcm_agent.config import get_config_manager
+        >>> from gcm_agent.config.config_manager import LLMProviderConfig
         >>> from gcm_agent.agent import create_gcm_agent
         >>>
         >>> config_mgr = get_config_manager()
         >>> gcm_config = config_mgr.get_gcm_config()
         >>> auth_config = config_mgr.get_auth_config()
-        >>> watsonx_config = config_mgr.get_watsonx_config()
         >>> agent_config = config_mgr.get_agent_config()
         >>> password = config_mgr.get_password()
         >>> client_secret = config_mgr.get_client_secret()
-        >>> watsonx_api_key = config_mgr.get_watsonx_api_key()
+        >>>
+        >>> # Create LLM config for WatsonX
+        >>> llm_config = LLMProviderConfig(
+        ...     provider="watsonx",
+        ...     watsonx_config=config_mgr.get_watsonx_config(),
+        ...     watsonx_api_key=config_mgr.get_watsonx_api_key()
+        ... )
         >>>
         >>> agent = await create_gcm_agent(
-        ...     gcm_config, auth_config, watsonx_config, agent_config,
-        ...     password, client_secret, watsonx_api_key
+        ...     gcm_config, auth_config, llm_config, agent_config,
+        ...     password, client_secret
         ... )
         >>>
         >>> # Use the agent
@@ -88,14 +93,13 @@ async def create_gcm_agent(
             gcm_config, auth_config, agent_config, password, client_secret
         )
         
-        # Step 2: Create agent instance
+        # Step 2: Create agent instance with unified LLM config
         logger.debug("Step 2: Creating agent instance")
         agent = GCMAgent(
             mcp_client=mcp_client,
             tool_loader=tool_loader,
-            watsonx_config=watsonx_config,
-            api_key=watsonx_api_key,
             agent_config=agent_config,
+            llm_config=llm_config,
         )
         
         # Step 3: Initialize agent (load tools, create graph)

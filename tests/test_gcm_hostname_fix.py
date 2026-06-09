@@ -137,12 +137,19 @@ async def test_hostname_fix():
             cache_ttl=agent_config.tool_cache_ttl,
         )
         
+        from gcm_agent.config.config_manager import LLMProviderConfig
+        
+        llm_config = LLMProviderConfig(
+            provider="watsonx",
+            watsonx_config=watsonx_config,
+            watsonx_api_key=watsonx_api_key,
+        )
+        
         agent = GCMAgent(
             mcp_client=mcp_client,
             tool_loader=tool_loader,
-            watsonx_config=watsonx_config,
-            api_key=watsonx_api_key,
             agent_config=agent_config,
+            llm_config=llm_config,
         )
         
         await agent.initialize()
