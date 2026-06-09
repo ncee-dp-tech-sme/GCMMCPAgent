@@ -2,6 +2,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.9.6-blue.svg)](CHANGELOG.md)
 
 An AI-powered assistant that provides natural language interaction with IBM Guardium Cryptography Manager (GCM) through its embedded Model Context Protocol (MCP) server.
 
@@ -721,11 +722,16 @@ Built with:
 
 | Version | Date | Changes |
 |---------|------|---------|
-| 2026-06-06 | 2026-06-06 | Fixed SSL certificate verification, tuple unpacking, and discovery mode prompt issues |
-| 1.0 | 2026-06-05 | Initial release with core functionality |
+| 0.9.6 | 2026-06-09 | Phase 4: Observability & Debugging - Structured logging, token tracking, performance monitoring |
+| 0.9.5 | 2026-06-08 | Phase 3: Tool Management & Analytics - Intelligent tool prioritization |
+| 0.9.4 | 2026-06-08 | Phase 2: Configuration & Resilience - Configurable LLM parameters, retry logic |
+| 1.0.1 | 2026-06-06 | Fixed SSL certificate verification, tuple unpacking, and discovery mode prompt issues |
+| 1.0.0 | 2026-06-05 | Initial release with core functionality |
+
+For detailed changelog, see [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 
 ---
 
 **Maintained By:** Erwin Friethoff - Senior Security Architect
-**Last Updated:** 2026-06-06
-**Version:** 2026-06-06
+**Last Updated:** 2026-06-09
+**Version:** 0.9.6

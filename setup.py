@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="gcm-agent",
-    version="0.1.0",
+    version="0.9.6",
     description="LangChain-based agent for IBM Guardium Cryptography Manager MCP integration.",
     packages=find_packages(include=["gcm_agent", "gcm_agent.*"]),
     include_package_data=True,
