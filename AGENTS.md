@@ -4,6 +4,36 @@ This file provides guidance to agents when working with code in this repository.
 
 ## Repository Type
 Full-stack Python application - IBM Guardium Cryptography Manager MCP Server integration with LangGraph agent.
+## Recent Updates (2026-06-09)
+
+### Prompt System Optimization (2026-06-09 23:54 UTC)
+
+**Optimized agent prompts by combining existing system with new guidance from gcm_prompts.md**
+
+**What Changed:**
+- Enhanced base system prompt with comprehensive parameter requirements
+- Improved discovery mode prompt with clearer tool usage guidelines
+- Added explicit "Common Mistakes to AVOID" checklist
+- Better balance between execute tool acknowledgment and direct call preference
+- Maintained all existing bug fixes (query independence, parameter handling)
+
+**Key Improvements:**
+1. **More comprehensive parameter guidance** - Detailed requirements for pagination, filters, nested fields
+2. **Clearer tool selection rules** - When to use execute vs. direct calls
+3. **Better error prevention** - Explicit checklist of common mistakes
+4. **Enhanced examples** - More practical workflow demonstrations
+
+**Files Modified:**
+- [`gcm_agent/agent/prompts.py`](gcm_agent/agent/prompts.py) - Combined and optimized all prompts
+- [`docs/PROMPT_OPTIMIZATION.md`](docs/PROMPT_OPTIMIZATION.md) - Full optimization documentation
+
+**Impact:**
+- ✅ Fewer parameter validation errors
+- ✅ Better tool selection decisions
+- ✅ More accurate responses with actual values
+- ✅ Maintained query independence (no context bleeding)
+- ✅ 100% backward compatible
+
 
 
 ### Fixed Debug UI Observability Logging Integration (2026-06-09 22:10 UTC)
