@@ -391,8 +391,6 @@ def _build_chatbot_section() -> Tuple[gr.Chatbot, gr.Textbox]:
         height=500,
         show_label=True,
         avatar_images=(None, "🤖"),
-        type="messages",  # Enable HTML rendering in messages
-        render_markdown=True,  # Enable markdown/HTML rendering
     )
     
     with gr.Row():
