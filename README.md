@@ -31,6 +31,7 @@ The GCM Agent enables you to manage cryptographic assets, query key information,
 - 🔍 **Observability** - Comprehensive logging for debugging and monitoring (Phase 4)
 - 💰 **Token Tracking** - Monitor LLM costs with detailed token usage metrics (Phase 4)
 - ⚡ **Performance Monitoring** - Real-time performance metrics and timing analysis (Phase 4)
+- 📋 **Automatic Table Formatting** - Tabular data automatically rendered as styled HTML tables for improved readability
 
 ### Architecture Highlights
 

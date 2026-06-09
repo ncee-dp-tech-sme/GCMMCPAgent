@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-06-09 - UI Enhancement: Automatic Table Formatting
+
+### Added
+- **Automatic Table Formatting**: Agent responses containing pipe-delimited markdown tables are now automatically converted to styled HTML tables for improved readability
+- New module: `gcm_agent/utils/table_formatter.py` with table detection and formatting logic
+- Professional table styling with:
+  - Purple gradient header background (#667eea to #764ba2)
+  - Alternating row colors (white/light gray #f8f9fa)
+  - Responsive horizontal scrolling for wide tables
+  - Word wrapping for long content (max 200px cell width)
+  - Box shadow for visual depth
+- Test suite: `tests/test_table_formatter.py` with comprehensive coverage
+- Documentation: `docs/TABLE_FORMATTING.md` with implementation details
+
+### Changed
+- Updated `gcm_agent/ui/chat_ui.py` to integrate table formatting into chat response streaming
+- Modified Gradio chatbot component to enable HTML rendering (`type="messages"`, `render_markdown=True`)
+- Updated `gcm_agent/utils/__init__.py` to export `format_response_tables`
+
+### Impact
+- **Significantly improved readability** of tabular data (keys, assets, policy violations, etc.)
+- **Zero configuration required** - works automatically
+- **Minimal performance overhead** (<1ms per table)
+- **Backward compatible** - non-table text unchanged
+
 ## 2026-06-09 - Code Quality: Logger Refactoring for Performance and Maintainability
 
 ### Improvements

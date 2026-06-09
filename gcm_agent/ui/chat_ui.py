@@ -7,6 +7,7 @@
 # 2026-06-08 22:09 UTC - Integrated debug UI for real-time observability logs
 # 2026-06-09 20:45 UTC - Refactored for better maintainability: extracted helpers, consolidated error handling, fixed streaming accumulation
 # 2026-06-09 20:57 UTC - Moved late imports to module level for PEP 8 compliance
+# 2026-06-09 21:22 UTC - Added table formatting for better data presentation
 
 from typing import List, Tuple, Optional, AsyncGenerator, Dict, Callable, Any
 import json
@@ -25,6 +26,7 @@ from gcm_agent.config.config_manager import (
 )
 from gcm_agent.utils.logger import get_ui_logger
 from gcm_agent.ui.debug_ui import get_debug_ui_instance
+from gcm_agent.utils.table_formatter import format_response_tables
 
 
 logger = get_ui_logger()
@@ -274,8 +276,10 @@ async def chat_response(message: str, history: List[dict], agent_state: Optional
         response = ""
         async for chunk in state.agent.stream_chat(message):
             response += chunk  # Accumulate chunks instead of overwriting
-            # Update the last message in history with accumulated response
-            history[-1] = {"role": "assistant", "content": response}
+            # Format tables in the accumulated response for better presentation
+            formatted_response = format_response_tables(response)
+            # Update the last message in history with formatted response
+            history[-1] = {"role": "assistant", "content": formatted_response}
             yield history, ""
         
         logger.debug(f"Response complete: {len(response)} characters")
@@ -387,6 +391,8 @@ def _build_chatbot_section() -> Tuple[gr.Chatbot, gr.Textbox]:
         height=500,
         show_label=True,
         avatar_images=(None, "🤖"),
+        type="messages",  # Enable HTML rendering in messages
+        render_markdown=True,  # Enable markdown/HTML rendering
     )
     
     with gr.Row():
