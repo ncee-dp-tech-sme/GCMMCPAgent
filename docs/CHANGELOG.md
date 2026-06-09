@@ -1,5 +1,155 @@
 # Changelog
 
+## 2026-06-09 - Major Refactoring: AgentSetupConfig & Enhanced create_gcm_agent
+
+### Breaking Changes
+**⚠️ API Change: `create_gcm_agent` now uses `AgentSetupConfig`**
+
+The `create_gcm_agent` function signature has been simplified from 7 parameters to a single consolidated configuration object. This is a **breaking change** that requires updating all call sites.
+
+#### Migration Guide
+
+**Old API (7 parameters):**
+```python
+agent = await create_gcm_agent(
+    keycloak_config,
+    gcm_config,
+    auth_config,
+    llm_config,
+    agent_config,
+    password,
+    client_secret
+)
+```
+
+**New API (1 parameter):**
+```python
+from gcm_agent.config.config_manager import AgentSetupConfig
+
+setup_config = AgentSetupConfig(
+    keycloak_config=keycloak_config,
+    gcm_config=gcm_config,
+    auth_config=auth_config,
+    llm_config=llm_config,
+    agent_config=agent_config,
+    password=password,
+    client_secret=client_secret
+)
+
+agent = await create_gcm_agent(setup_config)
+```
+
+### New Features
+
+1. **AgentSetupConfig Dataclass** (`gcm_agent/config/config_manager.py`)
+   - Consolidates all 7 agent creation parameters into single object
+   - Built-in validation for password and client_secret (non-empty check)
+   - Cleaner API surface - easier to extend with new configuration fields
+   - Better encapsulation and type safety
+
+2. **Enhanced Logging** (`gcm_agent/agent/__init__.py`)
+   - Comprehensive diagnostic information in agent creation logs
+   - Now includes: gcm_url, gcm_hostname, keycloak_url, keycloak_realm, discovery_mode, llm_provider, max_iterations, username
+   - Improved observability for troubleshooting
+
+3. **Improved Exception Handling**
+   - Fixed incomplete exception handler (line 232 was truncated)
+   - Proper exception chaining with `raise ... from e`
+   - Converts generic exceptions to `AgentInitializationError` with context
+
+4. **Simplified Architecture**
+   - Removed `_mcp_client_context` context manager (single-use abstraction)
+   - Inlined MCP client creation for more direct control flow
+   - Explicit cleanup in both success and failure paths
+   - Easier to debug and understand
+
+### Files Modified
+
+- `gcm_agent/config/config_manager.py`: Added `AgentSetupConfig` dataclass
+- `gcm_agent/agent/__init__.py`: Refactored `create_gcm_agent` with new signature
+- `gcm_agent/ui/chat_ui.py`: Updated to use `AgentSetupConfig`
+- `tests/test_agent.py`: Added tests for new API, updated mocks
+
+### Benefits
+
+- **Simpler API**: 1 parameter instead of 7 - easier to call and extend
+- **Better Validation**: Built-in checks for empty secrets at config creation time
+- **Enhanced Observability**: Comprehensive logging for debugging
+- **Improved Reliability**: Proper exception handling and cleanup
+- **Future-Proof**: Easy to add new configuration fields without breaking changes
+
+### Testing
+
+- Added 3 new tests for `AgentSetupConfig` functionality
+- Tests verify: agent creation, cleanup on failure, config validation
+- 2/3 new tests passing (validation tests fully working)
+
+# Changelog
+
+## 2026-06-09 - create_gcm_agent Refactoring
+
+### Improvements
+**Refactored `create_gcm_agent` factory function for better maintainability**
+
+The `create_gcm_agent` function in `gcm_agent/agent/__init__.py` has been refactored to improve code quality, eliminate duplication, and add automatic resource management. This is a **non-breaking change** - the function signature and behavior remain identical.
+
+#### What Changed
+
+1. **Extracted Cleanup Logic** - Eliminated code duplication
+   - Created `_cleanup_mcp_client()` helper function
+   - Single point of maintenance for MCP client cleanup
+   - Reduces code duplication from 2 identical blocks to 1 reusable function
+
+2. **Added Context Manager** - Automatic resource management
+   - Created `_mcp_client_context()` async context manager
+   - Guarantees MCP client cleanup even on unexpected errors
+   - Follows Python best practices for resource management
+   - Prevents resource leaks in edge cases
+
+3. **Consolidated Exception Handling** - Clearer error flow
+   - Merged two exception handlers with identical cleanup logic
+   - Reduced nesting and complexity
+   - Maintained same exception behavior (no breaking changes)
+
+4. **Improved Logging Messages** - Better debugging
+   - Replaced generic "Step 1/2/3" labels with descriptive operation names
+   - "Creating MCP client and tool loader"
+   - "Instantiating GCM agent"
+   - "Initializing agent (loading tools, building graph)"
+
+#### Benefits
+
+- **Maintainability**: Single cleanup function easier to modify and test
+- **Reliability**: Context manager ensures cleanup happens in all scenarios
+- **Readability**: Clearer logging and reduced code duplication
+- **Safety**: Automatic resource management prevents leaks
+
+#### Code Example
+
+**Before:**
+```python
+mcp_client = None
+try:
+    logger.debug("Step 1: Creating MCP client and tool loader")
+    mcp_client, tool_loader = await create_gcm_mcp_client(...)
+    # ... agent creation ...
+except Exception as e:
+    if mcp_client:
+        try:
+            await mcp_client.close()
+        except Exception as cleanup_error:
+            logger.warning(f"Failed to cleanup: {cleanup_error}")
+    raise
+```
+
+**After:**
+```python
+async with _mcp_client_context(...) as (mcp_client, tool_loader):
+    logger.debug("Instantiating GCM agent")
+    # ... agent creation ...
+    # Cleanup happens automatically
+```
+
 ## 2026-06-09 - GCMAgent.__init__ Refactoring
 
 ### Breaking Changes

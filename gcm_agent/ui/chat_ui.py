@@ -129,21 +129,9 @@ async def initialize_agent() -> str:
                 _agent_state.error_message = error_msg
                 return f"❌ {error_msg}"
         
-        # Create MCP client and tool loader using the helper function
-        logger.debug("Creating MCP client and tool loader")
-        from gcm_agent.mcp import create_gcm_mcp_client
-        
-        _agent_state.mcp_client, _agent_state.tool_loader = await create_gcm_mcp_client(
-            keycloak_config=keycloak_config,
-            gcm_config=gcm_config,
-            auth_config=auth_config,
-            agent_config=agent_config,
-            password=password,
-            client_secret=client_secret,
-        )
-        
         # Create unified LLM provider config
-        from gcm_agent.config.config_manager import LLMProviderConfig
+        from gcm_agent.config.config_manager import LLMProviderConfig, AgentSetupConfig
+        from gcm_agent.agent import create_gcm_agent
         
         llm_provider_config = LLMProviderConfig(
             provider=llm_config.provider,
@@ -153,20 +141,28 @@ async def initialize_agent() -> str:
             openai_api_key=openai_api_key,
         )
         
-        # Create agent with debug UI integration
-        logger.debug(f"Creating GCM Agent with {llm_config.provider} LLM")
-        debug_ui = get_debug_ui_instance()
-        _agent_state.agent = GCMAgent(
-            mcp_client=_agent_state.mcp_client,
-            tool_loader=_agent_state.tool_loader,
-            agent_config=agent_config,
+        # Create consolidated setup config
+        setup_config = AgentSetupConfig(
+            keycloak_config=keycloak_config,
+            gcm_config=gcm_config,
+            auth_config=auth_config,
             llm_config=llm_provider_config,
-            debug_ui=debug_ui,
+            agent_config=agent_config,
+            password=password,
+            client_secret=client_secret,
         )
         
-        # Initialize agent
-        logger.debug("Initializing agent components")
-        await _agent_state.agent.initialize()
+        # Create and initialize agent using refactored function
+        logger.debug(f"Creating GCM Agent with {llm_config.provider} LLM")
+        _agent_state.agent = await create_gcm_agent(setup_config)
+        
+        # Store MCP client and tool loader references for cleanup
+        _agent_state.mcp_client = _agent_state.agent.mcp_client
+        _agent_state.tool_loader = _agent_state.agent.tool_loader
+        
+        # Integrate debug UI
+        debug_ui = get_debug_ui_instance()
+        _agent_state.agent.debug_ui = debug_ui
         
         _agent_state.initialized = True
         _agent_state.error_message = None

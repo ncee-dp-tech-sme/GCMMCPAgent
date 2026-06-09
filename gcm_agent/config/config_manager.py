@@ -1,6 +1,7 @@
 """Configuration manager module for secure retrieval, validation, and caching of GCM agent settings."""
 
 # Made with Bob
+# 2026-06-09 19:50 UTC - Added AgentSetupConfig dataclass to consolidate agent creation parameters
 # 2026-06-05 19:53 UTC - Initial implementation of configuration manager with Pydantic models
 # 2026-06-05 21:02 UTC - Separated Keycloak configuration and added independent SSL verification
 # 2026-06-05 21:50 UTC - Added WatsonX URL configuration field
@@ -10,6 +11,7 @@
 
 import json
 import threading
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field, validator, ValidationError
 
@@ -309,6 +311,39 @@ class AgentConfig(BaseModel):
     class Config:
         """Pydantic model configuration."""
         validate_assignment = True
+
+@dataclass
+class AgentSetupConfig:
+    """
+    Consolidated configuration for agent creation.
+    
+    Bundles all required configuration objects and secrets into a single
+    parameter for cleaner agent initialization.
+    
+    Attributes:
+        keycloak_config: Keycloak server configuration
+        gcm_config: GCM server configuration
+        auth_config: Authentication configuration
+        llm_config: LLM provider configuration
+        agent_config: Agent behavior configuration
+        password: GCM user password
+        client_secret: OAuth2 client secret
+    """
+    keycloak_config: KeycloakConfig
+    gcm_config: GCMServerConfig
+    auth_config: AuthConfig
+    llm_config: LLMProviderConfig
+    agent_config: AgentConfig
+    password: str
+    client_secret: str
+    
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        if not self.password or not self.password.strip():
+            raise ValueError("Password cannot be empty")
+        if not self.client_secret or not self.client_secret.strip():
+            raise ValueError("Client secret cannot be empty")
+
 
 
 class ConfigManager:

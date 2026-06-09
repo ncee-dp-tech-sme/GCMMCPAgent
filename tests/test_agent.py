@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
-from gcm_agent.agent.gcm_agent import GCMAgent
+from gcm_agent.agent.gcm_agent import GCMAgent, AgentInitializationError
 from gcm_agent.agent.prompts import get_system_prompt
 from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig, LLMProviderConfig
 
@@ -21,9 +21,15 @@ class TestGCMAgent:
         mock_graph = Mock()
         mock_create_agent.return_value = mock_graph
         
+        # Create proper tool mock with required attributes
+        mock_tool = Mock()
+        mock_tool.name = 'test_tool'
+        mock_tool.__name__ = 'test_tool'
+        mock_tool.__qualname__ = 'test_tool'
+        
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
-        mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
+        mock_tool_loader.load_tools.return_value = [mock_tool]
         
         watsonx_config = WatsonXConfig(
             project_id='test_project_id',
@@ -69,9 +75,15 @@ class TestGCMAgent:
         }
         mock_create_agent.return_value = mock_graph
         
+        # Create proper tool mock with required attributes
+        mock_tool = Mock()
+        mock_tool.name = 'test_tool'
+        mock_tool.__name__ = 'test_tool'
+        mock_tool.__qualname__ = 'test_tool'
+        
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
-        mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
+        mock_tool_loader.load_tools.return_value = [mock_tool]
         
         watsonx_config = WatsonXConfig(
             project_id='test_project_id',
@@ -111,13 +123,18 @@ class TestGCMAgent:
         mock_graph = Mock()
         mock_create_agent.return_value = mock_graph
         
+        # Create proper tool mocks with required attributes
+        mock_tools = []
+        for tool_name in ['list_keys', 'create_key', 'delete_key']:
+            mock_tool = Mock()
+            mock_tool.name = tool_name
+            mock_tool.__name__ = tool_name
+            mock_tool.__qualname__ = tool_name
+            mock_tools.append(mock_tool)
+        
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
-        mock_tool_loader.load_tools.return_value = [
-            Mock(name='list_keys'),
-            Mock(name='create_key'),
-            Mock(name='delete_key')
-        ]
+        mock_tool_loader.load_tools.return_value = mock_tools
         
         watsonx_config = WatsonXConfig(
             project_id='test_project_id',
@@ -164,9 +181,15 @@ class TestGCMAgent:
         }
         mock_create_agent.return_value = mock_graph
         
+        # Create proper tool mock with required attributes
+        mock_tool = Mock()
+        mock_tool.name = 'test_tool'
+        mock_tool.__name__ = 'test_tool'
+        mock_tool.__qualname__ = 'test_tool'
+        
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
-        mock_tool_loader.load_tools.return_value = [Mock(name='test_tool')]
+        mock_tool_loader.load_tools.return_value = [mock_tool]
         
         watsonx_config = WatsonXConfig(
             project_id='test_project_id',
@@ -197,6 +220,200 @@ class TestGCMAgent:
         
         # Verify history is maintained
         assert len(agent.history) > 0
+
+class TestCreateGCMAgent:
+    """Test create_gcm_agent factory function with AgentSetupConfig."""
+    
+    @pytest.mark.asyncio
+    @patch('gcm_agent.agent.gcm_agent.ChatWatsonx')
+    @patch('langchain.agents.create_agent')
+    @patch('gcm_agent.agent.create_gcm_mcp_client')
+    async def test_create_gcm_agent_with_setup_config(
+        self, mock_create_mcp_client, mock_create_agent, mock_llm_class
+    ):
+        """Test agent creation using AgentSetupConfig."""
+        from gcm_agent.agent import create_gcm_agent
+        from gcm_agent.config.config_manager import (
+            KeycloakConfig, GCMServerConfig, AuthConfig, AgentSetupConfig
+        )
+        
+        # Setup mocks
+        mock_llm = Mock()
+        mock_llm_class.return_value = mock_llm
+        
+        mock_graph = Mock()
+        mock_create_agent.return_value = mock_graph
+        
+        # Create proper tool mock with required attributes
+        mock_tool = Mock()
+        mock_tool.name = 'test_tool'
+        mock_tool.__name__ = 'test_tool'
+        mock_tool.__qualname__ = 'test_tool'
+        
+        mock_mcp_client = AsyncMock()
+        mock_mcp_client.close = AsyncMock()
+        mock_tool_loader = AsyncMock()
+        mock_tool_loader.load_tools.return_value = [mock_tool]
+        mock_create_mcp_client.return_value = (mock_mcp_client, mock_tool_loader)
+        
+        # Create configuration objects
+        keycloak_config = KeycloakConfig(
+            url="https://keycloak.example.com",
+            port=443,
+            realm="master"
+        )
+        gcm_config = GCMServerConfig(
+            url="https://gcm.example.com",
+            hostname="gcm.example.com"
+        )
+        auth_config = AuthConfig(
+            username="testuser",
+            client_id="test_client"
+        )
+        watsonx_config = WatsonXConfig(
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2'
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
+        
+        # Create consolidated setup config
+        setup_config = AgentSetupConfig(
+            keycloak_config=keycloak_config,
+            gcm_config=gcm_config,
+            auth_config=auth_config,
+            llm_config=llm_config,
+            agent_config=agent_config,
+            password="test_password",
+            client_secret="test_secret"
+        )
+        
+        # Create agent
+        agent = await create_gcm_agent(setup_config)
+        
+        # Verify agent was created and initialized
+        assert agent is not None
+        assert mock_create_mcp_client.called
+        assert mock_llm_class.called
+        assert mock_create_agent.called
+    
+    @pytest.mark.asyncio
+    @patch('gcm_agent.agent.create_gcm_mcp_client')
+    async def test_create_gcm_agent_cleanup_on_failure(self, mock_create_mcp_client):
+        """Test that MCP client is cleaned up when agent initialization fails."""
+        from gcm_agent.agent import create_gcm_agent
+        from gcm_agent.config.config_manager import (
+            KeycloakConfig, GCMServerConfig, AuthConfig, AgentSetupConfig
+        )
+        
+        # Setup mock to fail during MCP client creation
+        mock_create_mcp_client.side_effect = Exception("Connection failed")
+        
+        # Create configuration objects
+        keycloak_config = KeycloakConfig(
+            url="https://keycloak.example.com",
+            port=443,
+            realm="master"
+        )
+        gcm_config = GCMServerConfig(
+            url="https://gcm.example.com",
+            hostname="gcm.example.com"
+        )
+        auth_config = AuthConfig(
+            username="testuser",
+            client_id="test_client"
+        )
+        watsonx_config = WatsonXConfig(
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2'
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
+        
+        setup_config = AgentSetupConfig(
+            keycloak_config=keycloak_config,
+            gcm_config=gcm_config,
+            auth_config=auth_config,
+            llm_config=llm_config,
+            agent_config=agent_config,
+            password="test_password",
+            client_secret="test_secret"
+        )
+        
+        # Verify exception is raised and converted to AgentInitializationError
+        with pytest.raises(AgentInitializationError):
+            await create_gcm_agent(setup_config)
+    
+    def test_agent_setup_config_validation(self):
+        """Test AgentSetupConfig validates empty secrets."""
+        from gcm_agent.config.config_manager import (
+            KeycloakConfig, GCMServerConfig, AuthConfig, AgentSetupConfig
+        )
+        
+        keycloak_config = KeycloakConfig(
+            url="https://keycloak.example.com",
+            port=443,
+            realm="master"
+        )
+        gcm_config = GCMServerConfig(
+            url="https://gcm.example.com",
+            hostname="gcm.example.com"
+        )
+        auth_config = AuthConfig(
+            username="testuser",
+            client_id="test_client"
+        )
+        watsonx_config = WatsonXConfig(
+            project_id='test_project_id',
+            model='ibm/granite-13b-chat-v2'
+        )
+        agent_config = AgentConfig(
+            discovery_mode=False,
+            max_iterations=10
+        )
+        llm_config = LLMProviderConfig(
+            provider='watsonx',
+            watsonx_config=watsonx_config,
+            watsonx_api_key='test_api_key'
+        )
+        
+        # Test empty password validation
+        with pytest.raises(ValueError, match="Password cannot be empty"):
+            AgentSetupConfig(
+                keycloak_config=keycloak_config,
+                gcm_config=gcm_config,
+                auth_config=auth_config,
+                llm_config=llm_config,
+                agent_config=agent_config,
+                password="",
+                client_secret="test_secret"
+            )
+        
+        # Test empty client_secret validation
+        with pytest.raises(ValueError, match="Client secret cannot be empty"):
+            AgentSetupConfig(
+                keycloak_config=keycloak_config,
+                gcm_config=gcm_config,
+                auth_config=auth_config,
+                llm_config=llm_config,
+                agent_config=agent_config,
+                password="test_password",
+                client_secret=""
+            )
 
 
 class TestSystemPrompt:
