@@ -1,6 +1,7 @@
 """Keycloak authentication module for obtaining OAuth2 access tokens for the GCM agent."""
 
 # Made with Bob
+# 2026-06-09 20:41 UTC - REFACTORING: Extracted helper methods, simplified error handling with raise_for_status(), reduced code duplication
 # 2026-06-06 07:30 UTC - CRITICAL FIX: Changed httpx.AsyncClient creation to NOT pass verify parameter when verify_ssl=False, allowing module-level SSL bypass patch to apply (fixes intermittent SSL errors)
 # 2026-06-05 21:58 UTC - Initial implementation of KeycloakAuthenticator with OAuth2 token management
 # 2026-06-05 21:04 UTC - Updated to use separate Keycloak URL configuration
@@ -14,6 +15,21 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from gcm_agent.utils.logger import get_auth_logger
+
+
+# Module-level helper functions
+
+def _build_client_kwargs(verify_ssl: bool) -> Dict[str, Any]:
+    """
+    Build httpx.AsyncClient kwargs based on SSL verification setting.
+    
+    Args:
+        verify_ssl: Whether to verify SSL certificates
+        
+    Returns:
+        Dictionary of client kwargs
+    """
+    return {"verify": True} if verify_ssl else {}
 
 
 class KeycloakAuthenticator:
@@ -71,6 +87,71 @@ class KeycloakAuthenticator:
         """
         return f"{self.keycloak_url}/realms/{self.realm}/protocol/openid-connect/token"
 
+    def _cache_token(self, token_data: Dict[str, Any]) -> str:
+        """
+        Cache token data and calculate expiry.
+        
+        Args:
+            token_data: Token response from Keycloak
+            
+        Returns:
+            Access token string
+        """
+        self._access_token = token_data["access_token"]
+        self._refresh_token = token_data.get("refresh_token")
+        
+        # Calculate token expiry (with 30 second buffer)
+        expires_in = token_data.get("expires_in", 300)
+        self._token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in - 30)
+        
+        self.logger.info(
+            f"Token cached: expires_in={expires_in}s, expires_at={self._token_expiry} UTC"
+        )
+        return self._access_token
+
+    async def _post_token_request(
+        self,
+        data: Dict[str, str],
+        operation: str = "authentication"
+    ) -> Dict[str, Any]:
+        """
+        Post token request to Keycloak and handle response.
+        
+        Args:
+            data: Form data for token request
+            operation: Operation name for logging (e.g., "authentication", "refresh")
+            
+        Returns:
+            Token response data
+            
+        Raises:
+            KeycloakAuthError: If request fails
+        """
+        token_url = self._get_token_endpoint()
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        
+        try:
+            client_kwargs = _build_client_kwargs(self.verify_ssl)
+            async with httpx.AsyncClient(**client_kwargs) as client:
+                response = await client.post(token_url, headers=headers, data=data)
+                response.raise_for_status()
+                return response.json()
+                
+        except httpx.HTTPStatusError as e:
+            error_msg = f"Keycloak {operation} failed: {e.response.status_code}"
+            try:
+                error_detail = e.response.json()
+                error_msg += f" - {error_detail.get('error_description', error_detail.get('error', ''))}"
+            except Exception:
+                error_msg += f" - {e.response.text}"
+            self.logger.error(error_msg)
+            raise KeycloakAuthError(error_msg) from e
+            
+        except httpx.HTTPError as e:
+            error_msg = f"HTTP error during Keycloak {operation}: {e}"
+            self.logger.error(error_msg)
+            raise KeycloakAuthError(error_msg) from e
+
     async def get_token(self) -> str:
         """
         Get OAuth2 access token from Keycloak.
@@ -90,8 +171,6 @@ class KeycloakAuthenticator:
         # Request new token
         self.logger.info("Requesting new access token from Keycloak")
 
-        token_url = self._get_token_endpoint()
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "grant_type": "password",
             "client_id": self.client_id,
@@ -102,51 +181,11 @@ class KeycloakAuthenticator:
         }
 
         try:
-            # CRITICAL: Only pass verify if SSL verification is explicitly enabled
-            # This allows the module-level SSL bypass patch to apply when verify_ssl=False
-            client_kwargs = {}
-            if self.verify_ssl:
-                client_kwargs["verify"] = True
-                self.logger.debug("get_token: SSL verification ENABLED")
-            else:
-                self.logger.debug("get_token: SSL verification DISABLED - using module-level bypass")
+            token_data = await self._post_token_request(data, "authentication")
+            return self._cache_token(token_data)
             
-            async with httpx.AsyncClient(**client_kwargs) as client:
-                response = await client.post(token_url, headers=headers, data=data)
-
-                if response.status_code != 200:
-                    error_msg = f"Keycloak authentication failed: {response.status_code}"
-                    try:
-                        error_detail = response.json()
-                        error_msg += f" - {error_detail.get('error_description', error_detail.get('error', ''))}"
-                    except Exception:
-                        error_msg += f" - {response.text}"
-                    self.logger.error(error_msg)
-                    raise KeycloakAuthError(error_msg)
-
-                token_data = response.json()
-                self._access_token = token_data["access_token"]
-                self._refresh_token = token_data.get("refresh_token")
-
-                # Calculate token expiry (with 30 second buffer)
-                expires_in = token_data.get("expires_in", 300)
-                self._token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in - 30)
-                
-                self.logger.info(
-                    f"Successfully obtained access token: expires_in={expires_in}s, expires_at={self._token_expiry} UTC"
-                )
-                return self._access_token
-
-        except httpx.HTTPError as e:
-            error_msg = f"HTTP error during Keycloak authentication: {e}"
-            self.logger.error(error_msg)
-            raise KeycloakAuthError(error_msg) from e
         except KeyError as e:
             error_msg = f"Invalid token response from Keycloak: missing {e}"
-            self.logger.error(error_msg)
-            raise KeycloakAuthError(error_msg) from e
-        except Exception as e:
-            error_msg = f"Unexpected error during Keycloak authentication: {e}"
             self.logger.error(error_msg)
             raise KeycloakAuthError(error_msg) from e
 
@@ -171,8 +210,6 @@ class KeycloakAuthenticator:
 
         self.logger.info("Refreshing access token")
 
-        token_url = self._get_token_endpoint()
-        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         data = {
             "grant_type": "refresh_token",
             "client_id": self.client_id,
@@ -181,53 +218,13 @@ class KeycloakAuthenticator:
         }
 
         try:
-            # CRITICAL: Only pass verify if SSL verification is explicitly enabled
-            # This allows the module-level SSL bypass patch to apply when verify_ssl=False
-            client_kwargs = {}
-            if self.verify_ssl:
-                client_kwargs["verify"] = True
-                self.logger.debug("refresh_token: SSL verification ENABLED")
-            else:
-                self.logger.debug("refresh_token: SSL verification DISABLED - using module-level bypass")
+            token_data = await self._post_token_request(data, "token refresh")
+            return self._cache_token(token_data)
             
-            async with httpx.AsyncClient(**client_kwargs) as client:
-                response = await client.post(token_url, headers=headers, data=data)
-
-                if response.status_code != 200:
-                    error_msg = f"Token refresh failed: {response.status_code}"
-                    try:
-                        error_detail = response.json()
-                        error_msg += f" - {error_detail.get('error_description', error_detail.get('error', ''))}"
-                    except Exception:
-                        error_msg += f" - {response.text}"
-                    self.logger.error(error_msg)
-                    # If refresh fails, try getting new token
-                    self.logger.info("Refresh failed, requesting new token")
-                    return await self.get_token()
-
-                token_data = response.json()
-                self._access_token = token_data["access_token"]
-                self._refresh_token = token_data.get("refresh_token")
-
-                # Calculate token expiry (with 30 second buffer)
-                expires_in = token_data.get("expires_in", 300)
-                self._token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in - 30)
-                
-                self.logger.info(
-                    f"Successfully refreshed access token: expires_in={expires_in}s, expires_at={self._token_expiry} UTC"
-                )
-                return self._access_token
-
-        except httpx.HTTPError as e:
-            error_msg = f"HTTP error during token refresh: {e}"
-            self.logger.error(error_msg)
-            # Try getting new token on HTTP error
-            self.logger.info("HTTP error during refresh, requesting new token")
+        except KeycloakAuthError:
+            # If refresh fails, try getting new token
+            self.logger.info("Refresh failed, requesting new token")
             return await self.get_token()
-        except Exception as e:
-            error_msg = f"Unexpected error during token refresh: {e}"
-            self.logger.error(error_msg)
-            raise KeycloakAuthError(error_msg) from e
 
     def is_token_valid(self, token: str) -> bool:
         """

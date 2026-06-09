@@ -1,6 +1,7 @@
 """GCM authorization module for completing the second authentication step against user management endpoints."""
 
 # Made with Bob
+# 2026-06-09 20:20 UTC - REFACTORING: Extracted helper functions to module level, simplified error handling, reduced nested complexity
 # 2026-06-06 07:17 UTC - CRITICAL FIX: Changed all httpx.AsyncClient creation to NOT pass verify parameter when verify_ssl=False, allowing module-level SSL bypass patch to apply
 # 2026-06-06 06:00 UTC - Added comprehensive header logging with token masking for debugging Authorization Bearer token
 # 2026-06-06 02:59 UTC - Added gcm_hostname parameter to _client_factory to inject x-gcm-hostname header in all HTTP requests
@@ -11,12 +12,87 @@
 # 2026-06-05 21:44 UTC - Fixed authorization endpoint to use /ibm/usermanagement/api/v2/authorization with tenantId payload
 # 2026-06-05 22:00 UTC - Fixed client_factory to merge headers instead of overwriting
 
-from typing import Callable, Optional, Dict, Any
+from typing import Callable, Optional, Dict, Any, Set
 from datetime import datetime, timedelta, timezone
 
 import httpx
 
 from gcm_agent.utils.logger import get_auth_logger
+
+
+# Module-level helper functions (extracted from nested scopes for reusability)
+
+def _mask_token(token: str) -> str:
+    """
+    Mask token showing only first 8 and last 4 characters.
+    
+    Args:
+        token: Token string to mask
+        
+    Returns:
+        Masked token string
+    """
+    if len(token) <= 12:
+        return "***"
+    return f"{token[:8]}...{token[-4:]}"
+
+
+def _mask_auth_headers(headers: Dict[str, str]) -> Dict[str, str]:
+    """
+    Create a copy of headers with Authorization Bearer tokens masked.
+    
+    Args:
+        headers: Original headers dictionary
+        
+    Returns:
+        New dictionary with masked Authorization headers
+    """
+    masked = {}
+    for k, v in headers.items():
+        if k == "Authorization" and v.startswith("Bearer "):
+            masked[k] = f"Bearer {_mask_token(v[7:])}"
+        else:
+            masked[k] = v
+    return masked
+
+
+def _build_auth_headers(access_token: str, gcm_hostname: Optional[str] = None, existing_headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """
+    Build authentication headers with optional GCM hostname and existing headers.
+    
+    Args:
+        access_token: OAuth2 access token
+        gcm_hostname: Optional GCM hostname for x-gcm-hostname header
+        existing_headers: Optional existing headers to merge
+        
+    Returns:
+        Merged headers dictionary with authentication
+    """
+    headers = {
+        **(existing_headers or {}),
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json",
+    }
+    
+    if gcm_hostname:
+        headers["x-gcm-hostname"] = gcm_hostname
+    
+    return headers
+
+
+def _filter_client_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Filter out kwargs that conflict with httpx.AsyncClient initialization.
+    
+    Args:
+        kwargs: Original kwargs dictionary
+        
+    Returns:
+        Filtered kwargs dictionary
+    """
+    # Keys to remove that we handle explicitly
+    unwanted_keys: Set[str] = {'verify', 'timeout', 'cert', 'trust_env', 'auth', 'headers'}
+    return {k: v for k, v in kwargs.items() if k not in unwanted_keys}
 
 
 class GCMAuthenticator:
@@ -110,7 +186,7 @@ class GCMAuthenticator:
             new_token = await self._keycloak_authenticator.get_token()
             
             # Re-authorize with GCM using new token
-            await self.authorize(new_token, self._keycloak_authenticator.username)
+            await self.authorize(new_token)
             
             # Update stored token info with new expiration
             if self._keycloak_authenticator._token_expiry:
@@ -140,14 +216,13 @@ class GCMAuthenticator:
         """
         return f"{self.gcm_url}/ibm/usermanagement/api/v2/authorization"
 
-    async def authorize(self, access_token: str, username: str) -> bool:
+    async def authorize(self, access_token: str) -> bool:
         """
         Authorize with GCM user management endpoint.
         This is the second step of the two-step authentication flow.
 
         Args:
             access_token: OAuth2 access token from Keycloak
-            username: GCM username for authorization (not used in v2 API)
 
         Returns:
             True if authorization successful
@@ -155,37 +230,22 @@ class GCMAuthenticator:
         Raises:
             GCMAuthError: If authorization fails
         """
-        self.logger.info(f"Authorizing with GCM user management (v2 API)")
+        self.logger.info("Authorizing with GCM user management (v2 API)")
 
         authorize_url = self._get_authorize_endpoint()
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "tenantId": ""
-        }
+        headers = _build_auth_headers(access_token)
+        payload = {"tenantId": ""}
         
         # Log authorization request with masked token
-        def mask_token(token: str) -> str:
-            """Mask token showing only first 8 and last 4 characters."""
-            if len(token) <= 12:
-                return "***"
-            return f"{token[:8]}...{token[-4:]}"
-        
-        masked_headers = {
-            k: f"Bearer {mask_token(v[7:])}" if k == "Authorization" and v.startswith("Bearer ")
-               else v
-            for k, v in headers.items()
-        }
+        masked_headers = _mask_auth_headers(headers)
         self.logger.info(f"Authorization request to {authorize_url} with headers: {masked_headers}")
 
         try:
             # CRITICAL: Only pass verify if SSL verification is explicitly enabled
             # This allows the module-level SSL bypass patch to apply when verify_ssl=False
-            client_kwargs = {}
+            client_kwargs = {"verify": True} if self.verify_ssl else {}
+            
             if self.verify_ssl:
-                client_kwargs["verify"] = True
                 self.logger.debug("Authorization: SSL verification ENABLED")
             else:
                 self.logger.debug("Authorization: SSL verification DISABLED - using module-level bypass")
@@ -197,7 +257,8 @@ class GCMAuthenticator:
                     json=payload,
                 )
 
-                if response.status_code not in (200, 201, 204):
+                # Use httpx built-in error handling
+                if not response.is_success:
                     error_msg = f"GCM authorization failed: {response.status_code}"
                     try:
                         error_detail = response.json()
@@ -207,7 +268,7 @@ class GCMAuthenticator:
                     self.logger.error(error_msg)
                     raise GCMAuthError(error_msg)
 
-                self.logger.info(f"Successfully authorized user '{username}' with GCM")
+                self.logger.info("Successfully authorized with GCM")
                 return True
 
         except httpx.HTTPError as e:
@@ -237,10 +298,7 @@ class GCMAuthenticator:
         Returns:
             Configured httpx.AsyncClient with authentication headers
         """
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
+        headers = _build_auth_headers(access_token)
 
         # CRITICAL: Only pass verify if SSL verification is explicitly enabled
         # This allows the module-level SSL bypass patch to apply when verify_ssl=False
@@ -255,8 +313,7 @@ class GCMAuthenticator:
         else:
             self.logger.debug("Created authenticated HTTP client with SSL verification DISABLED (module-level bypass)")
 
-        client = httpx.AsyncClient(**client_kwargs)
-        return client
+        return httpx.AsyncClient(**client_kwargs)
 
     def _client_factory(
         self,
@@ -288,9 +345,10 @@ class GCMAuthenticator:
             >>> client = factory()
             >>> # Use client for MCP operations
         """
+        # Capture parameters in closure for factory function
         verify_ssl = self.verify_ssl
         logger = self.logger
-        authenticator = self  # Reference to self for token refresh
+        authenticator = self
 
         def factory(**kwargs) -> httpx.AsyncClient:
             """
@@ -298,12 +356,9 @@ class GCMAuthenticator:
             Merges authentication headers with any headers passed by MCP client.
             Removes conflicting parameters to avoid duplicate keyword arguments.
             
-            CRITICAL: Must pop 'verify' kwarg before creating AsyncClient to avoid conflicts.
-            For self-signed certificates, verify=False must be explicitly set.
-            
+            CRITICAL: Must filter kwargs before creating AsyncClient to avoid conflicts.
             Now checks token expiration and uses current token from authenticator.
             """
-            # Log all incoming kwargs for debugging
             logger.debug(f"Factory called with kwargs: {kwargs}")
             
             # Use current token from authenticator (may have been refreshed)
@@ -316,105 +371,61 @@ class GCMAuthenticator:
                     "Client creation will proceed with current token, but refresh is needed."
                 )
             
-            # CRITICAL: Pop 'verify' kwarg first to avoid conflicts (per AGENTS.md)
-            kwargs.pop("verify", None)
-            
-            # Remove other parameters that we're setting explicitly
-            kwargs.pop("timeout", None)
-            kwargs.pop("cert", None)
-            kwargs.pop("trust_env", None)
-            
-            # Remove auth parameter if present - we handle auth via headers
-            auth_param = kwargs.pop("auth", None)
-            if auth_param:
-                logger.debug(f"Removed auth parameter from kwargs: {type(auth_param)}")
-            
-            # Get existing headers from kwargs if any
+            # Extract and remove headers before filtering
             existing_headers = kwargs.pop("headers", {})
             
-            # Merge with authentication headers (our auth headers take precedence)
-            merged_headers = {
-                **existing_headers,
-                "Authorization": f"Bearer {current_token}",
-                "Content-Type": "application/json",
-            }
+            # Log removed auth parameter if present
+            if "auth" in kwargs:
+                logger.debug(f"Removed auth parameter from kwargs: {type(kwargs['auth'])}")
             
-            # Add x-gcm-hostname header if provided (required for GCM internal API calls)
-            if gcm_hostname:
-                merged_headers["x-gcm-hostname"] = gcm_hostname
-                logger.debug(f"Added x-gcm-hostname header: {gcm_hostname}")
+            # Filter out conflicting kwargs using helper function
+            filtered_kwargs = _filter_client_kwargs(kwargs)
             
-            # Log all headers being set (with token masked for security)
-            def mask_token(token: str) -> str:
-                """Mask token showing only first 8 and last 4 characters."""
-                if len(token) <= 12:
-                    return "***"
-                return f"{token[:8]}...{token[-4:]}"
+            # Build authentication headers with GCM hostname
+            merged_headers = _build_auth_headers(current_token, gcm_hostname, existing_headers)
             
-            masked_headers = {
-                k: mask_token(v) if k == "Authorization" and v.startswith("Bearer ")
-                   else v
-                for k, v in merged_headers.items()
-            }
+            # Log headers with token masked
+            masked_headers = _mask_auth_headers(merged_headers)
             logger.info(f"HTTP client headers configured: {masked_headers}")
             logger.debug(f"Full header count: {len(merged_headers)} headers")
-
-            logger.debug(f"Creating AsyncClient with verify={verify_ssl}, remaining kwargs={list(kwargs.keys())}")
+            logger.debug(f"Creating AsyncClient with verify={verify_ssl}, remaining kwargs={list(filtered_kwargs.keys())}")
             
-            # Define event hooks for request/response logging
+            # Create event hooks for request/response logging
             async def log_request(request):
                 """Log outgoing HTTP requests with masked headers."""
-                # Mask Authorization header in logs (case-insensitive check)
                 logged_headers = dict(request.headers)
-                # Check for both 'authorization' (lowercase) and 'Authorization' (capitalized)
-                auth_key = None
-                for key in logged_headers:
-                    if key.lower() == "authorization":
-                        auth_key = key
-                        break
+                # Find authorization header (case-insensitive)
+                auth_key = next((k for k in logged_headers if k.lower() == "authorization"), None)
                 
-                if auth_key:
-                    auth_value = logged_headers[auth_key]
-                    if auth_value.startswith("Bearer "):
-                        token = auth_value[7:]  # Remove "Bearer " prefix
-                        logged_headers[auth_key] = f"Bearer {mask_token(token)}"
+                if auth_key and logged_headers[auth_key].startswith("Bearer "):
+                    token = logged_headers[auth_key][7:]
+                    logged_headers[auth_key] = f"Bearer {_mask_token(token)}"
                 
-                logger.debug(
-                    f"HTTP Request: {request.method} {request.url} | "
-                    f"Headers: {logged_headers}"
-                )
+                logger.debug(f"HTTP Request: {request.method} {request.url} | Headers: {logged_headers}")
             
             async def log_response(response):
                 """Log HTTP responses."""
                 try:
-                    # Try to access elapsed time (may fail for streaming responses)
                     elapsed_time = f"Time: {response.elapsed.total_seconds():.2f}s"
                 except RuntimeError:
-                    # For streaming responses, elapsed is not available until consumed
                     elapsed_time = "Time: N/A (streaming)"
                 
-                logger.debug(
-                    f"HTTP Response: {response.status_code} from {response.url} | {elapsed_time}"
-                )
+                logger.debug(f"HTTP Response: {response.status_code} from {response.url} | {elapsed_time}")
             
-            # Create client with event hooks
-            # CRITICAL: Do NOT pass verify parameter - let module-level SSL bypass handle it
-            # The global patch in gcm_agent/__init__.py sets verify=False for all clients
-            # unless explicitly overridden. Passing verify=True here would override the patch.
+            # Build client kwargs
             client_kwargs = {
                 "headers": merged_headers,
                 "timeout": timeout,
-                "trust_env": False,  # Don't use environment SSL settings
-                "follow_redirects": True,  # Follow redirects
+                "trust_env": False,
+                "follow_redirects": True,
                 "event_hooks": {
                     "request": [log_request],
                     "response": [log_response],
                 },
-                **kwargs,
+                **filtered_kwargs,
             }
             
             # Only pass verify if SSL verification is explicitly enabled
-            # This allows the module-level patch to apply when verify_ssl=False
             if verify_ssl:
                 client_kwargs["verify"] = True
                 logger.debug("SSL verification ENABLED - will verify certificates")
@@ -422,7 +433,6 @@ class GCMAuthenticator:
                 logger.debug("SSL verification DISABLED - relying on module-level bypass")
             
             client = httpx.AsyncClient(**client_kwargs)
-            
             logger.debug(f"AsyncClient created successfully with SSL bypass={'disabled' if verify_ssl else 'enabled'}")
             return client
 
@@ -439,10 +449,7 @@ class GCMAuthenticator:
         Returns:
             Dictionary of authentication headers
         """
-        return {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json",
-        }
+        return _build_auth_headers(access_token)
 
 
 # Custom exception for GCM authorization errors

@@ -87,7 +87,7 @@ class TestGCMAuthenticator:
             hostname='gcm.example.com'
         )
         
-        result = await auth.authorize('test_token_123', 'testuser')
+        result = await auth.authorize('test_token_123')
         
         assert result is True
         assert mock_client.post.called

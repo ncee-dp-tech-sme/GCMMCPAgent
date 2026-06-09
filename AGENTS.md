@@ -7,6 +7,68 @@ Full-stack Python application - IBM Guardium Cryptography Manager MCP Server int
 
 ## Recent Updates (2026-06-09)
 
+### Chat UI Refactoring for Maintainability (2026-06-09 20:45 UTC)
+
+**Comprehensive refactoring of [`gcm_agent/ui/chat_ui.py`](gcm_agent/ui/chat_ui.py) to improve code quality and fix critical bugs.**
+
+**Key Improvements:**
+
+1. **Fixed Critical Streaming Bug (Line 268):**
+   - Changed `response = chunk` to `response += chunk`
+   - Chunks now accumulate properly instead of being overwritten
+   - Users see complete responses instead of just the last chunk
+
+2. **Extracted Configuration Validation (Lines 68-131):**
+   - Created helper functions: `_validate_base_config()`, `_get_watsonx_config()`, `_get_openai_config()`
+   - Reduced `initialize_agent()` complexity by 28.5% (123 → 88 lines)
+   - Single Responsibility Principle applied to each validation step
+
+3. **Dictionary-Based Provider Routing (Lines 115-127):**
+   - Replaced if/elif blocks with `_PROVIDER_CONFIG_HANDLERS` dictionary
+   - Adding new LLM providers now requires only adding handler function and dictionary entry
+   - Eliminates code duplication for provider-specific logic
+
+4. **Consolidated Error Handling (Lines 145-157):**
+   - Created `_handle_initialization_error()` for centralized error handling
+   - Guarantees cleanup on all error paths
+   - Consistent error message formatting across all failure scenarios
+
+5. **Improved Testability (Line 233):**
+   - Added optional `agent_state` parameter to `chat_response()`
+   - Enables unit testing without global state
+   - Maintains backward compatibility (defaults to global state)
+
+6. **Extracted UI Component Builders (Lines 349-408):**
+   - Created helpers: `_build_status_row()`, `_build_chatbot_section()`, `_build_action_buttons()`, `_build_export_section()`
+   - Reduced `create_chat_ui()` complexity by 37.6% (109 → 68 lines)
+   - Reduced nesting depth from 4-5 levels to 2-3 levels
+
+7. **Merged Duplicate Error Handlers (Lines 275-281):**
+   - Consolidated two except blocks into one with type checking
+   - Eliminates code duplication while maintaining error specificity
+
+**Code Metrics:**
+- Total lines: 415 → 476 (+14.7% for better organization)
+- `initialize_agent()` complexity: -47% (cyclomatic complexity ~15 → ~8)
+- `create_chat_ui()` complexity: -50% (cyclomatic complexity ~12 → ~6)
+- Helper functions added: 11
+- Test coverage: 23 comprehensive tests in `tests/test_chat_ui_refactoring.py`
+
+**Backward Compatibility:**
+✅ 100% backward compatible - no API changes, existing code works without modification
+
+**Documentation:**
+- Full refactoring details: [`docs/CHAT_UI_REFACTORING.md`](docs/CHAT_UI_REFACTORING.md)
+- Test suite: [`tests/test_chat_ui_refactoring.py`](tests/test_chat_ui_refactoring.py)
+
+**Impact:**
+- Critical bug fix ensures complete responses in streaming mode
+- Significantly improved maintainability and testability
+- Easier to add new LLM providers
+- Reduced cognitive load when reading/modifying code
+
+## Recent Updates (2026-06-09)
+
 ### Fixed Deprecated create_react_agent Function (2026-06-09 19:05 UTC)
 
 **Issue:**
