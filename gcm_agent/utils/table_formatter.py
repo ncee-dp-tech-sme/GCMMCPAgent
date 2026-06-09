@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-09 21:22 UTC - Initial implementation of table detection and HTML formatting
+# 2026-06-09 21:37 UTC - Switched from HTML to enhanced markdown for Gradio compatibility
 
 import re
 from typing import Optional, List, Tuple
@@ -45,9 +46,9 @@ def _parse_table_row(row: str) -> List[str]:
     return cells
 
 
-def _format_as_html_table(text: str, header_idx: int, separator_idx: int) -> str:
+def _format_as_enhanced_markdown(text: str, header_idx: int, separator_idx: int) -> str:
     """
-    Convert pipe-delimited table to HTML table.
+    Convert pipe-delimited table to enhanced markdown with better formatting.
     
     Args:
         text: Original text containing table
@@ -55,12 +56,13 @@ def _format_as_html_table(text: str, header_idx: int, separator_idx: int) -> str
         separator_idx: Index of separator row
         
     Returns:
-        HTML formatted table
+        Enhanced markdown formatted table
     """
     lines = text.split('\n')
     
     # Extract table lines (header + data rows)
     header_line = lines[header_idx]
+    separator_line = lines[separator_idx]
     data_lines = []
     
     # Collect all data rows after separator
@@ -70,43 +72,42 @@ def _format_as_html_table(text: str, header_idx: int, separator_idx: int) -> str
         else:
             break  # Stop at first non-table line
     
-    # Parse header
+    # Parse header and calculate column widths
     headers = _parse_table_row(header_line)
+    col_widths = [len(h) for h in headers]
     
-    # Build HTML table with improved styling
-    html_parts = [
-        '<div style="overflow-x: auto; margin: 10px 0;">',
-        '<table style="border-collapse: collapse; width: 100%; font-size: 14px; background: white; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">',
-        '<thead style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">',
-        '<tr>'
-    ]
-    
-    # Add headers with better styling
-    for header in headers:
-        html_parts.append(
-            f'<th style="padding: 12px 8px; text-align: left; font-weight: 600; '
-            f'border-bottom: 2px solid #764ba2; white-space: nowrap;">{header}</th>'
-        )
-    
-    html_parts.extend(['</tr>', '</thead>', '<tbody>'])
-    
-    # Add data rows with alternating colors
-    for idx, data_line in enumerate(data_lines):
+    # Update column widths based on data
+    for data_line in data_lines:
         cells = _parse_table_row(data_line)
-        bg_color = '#f8f9fa' if idx % 2 == 0 else 'white'
-        html_parts.append(f'<tr style="background: {bg_color};">')
-        
-        for cell in cells:
-            html_parts.append(
-                f'<td style="padding: 10px 8px; border-bottom: 1px solid #e9ecef; '
-                f'word-wrap: break-word; max-width: 200px;">{cell}</td>'
-            )
-        
-        html_parts.append('</tr>')
+        for i, cell in enumerate(cells):
+            if i < len(col_widths):
+                col_widths[i] = max(col_widths[i], len(cell))
     
-    html_parts.extend(['</tbody>', '</table>', '</div>'])
+    # Add padding to widths
+    col_widths = [w + 2 for w in col_widths]
     
-    return ''.join(html_parts)
+    # Build formatted table
+    formatted_lines = []
+    
+    # Add header with proper spacing
+    header_cells = [h.center(col_widths[i]) for i, h in enumerate(headers)]
+    formatted_lines.append('| ' + ' | '.join(header_cells) + ' |')
+    
+    # Add separator with proper width
+    separator_cells = ['-' * w for w in col_widths]
+    formatted_lines.append('|' + '|'.join(separator_cells) + '|')
+    
+    # Add data rows with proper spacing
+    for data_line in data_lines:
+        cells = _parse_table_row(data_line)
+        # Pad cells to match header count
+        while len(cells) < len(headers):
+            cells.append('')
+        formatted_cells = [cells[i].ljust(col_widths[i]) if i < len(cells) else ''.ljust(col_widths[i])
+                          for i in range(len(headers))]
+        formatted_lines.append('| ' + ' | '.join(formatted_cells) + ' |')
+    
+    return '\n'.join(formatted_lines)
 
 
 def format_response_tables(text: str) -> str:
@@ -117,7 +118,7 @@ def format_response_tables(text: str) -> str:
         text: Response text that may contain tables
         
     Returns:
-        Text with tables formatted as HTML
+        Text with tables formatted as enhanced markdown
     """
     if not text or '|' not in text:
         return text
@@ -143,14 +144,14 @@ def format_response_tables(text: str) -> str:
     table_lines = '\n'.join(lines[header_idx:table_end_idx])
     after_table = '\n'.join(lines[table_end_idx:])
     
-    # Format table as HTML
-    html_table = _format_as_html_table(table_lines, 0, 1)
+    # Format table as enhanced markdown
+    formatted_table = _format_as_enhanced_markdown(table_lines, 0, 1)
     
     # Combine parts
     result_parts = []
     if before_table.strip():
         result_parts.append(before_table.strip())
-    result_parts.append(html_table)
+    result_parts.append(formatted_table)
     if after_table.strip():
         result_parts.append(after_table.strip())
     
