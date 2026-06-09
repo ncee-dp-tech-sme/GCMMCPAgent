@@ -8,7 +8,7 @@
 
 from typing import List, Tuple, Optional, AsyncGenerator, Dict
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 import gradio as gr
 
 from gcm_agent.agent.gcm_agent import GCMAgent, AgentInitializationError, AgentExecutionError
@@ -274,7 +274,7 @@ def export_conversation() -> Tuple[str, str]:
         history = _agent_state.agent.get_history()
         
         export_data = {
-            "exported_at": datetime.utcnow().isoformat(),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
             "message_count": len(history),
             "messages": history,
         }

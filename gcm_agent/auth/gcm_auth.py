@@ -12,7 +12,7 @@
 # 2026-06-05 22:00 UTC - Fixed client_factory to merge headers instead of overwriting
 
 from typing import Callable, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -62,11 +62,12 @@ class GCMAuthenticator:
             keycloak_authenticator: Optional KeycloakAuthenticator instance for token refresh
         """
         self._access_token = access_token
-        # Calculate expiration with 60 second buffer to refresh before actual expiry
-        self._token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in - 60)
+        # Calculate expiration with 30 second buffer to refresh before actual expiry
+        # (Keycloak already applies 30s buffer, so total buffer is 60s which is reasonable)
+        self._token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in - 30)
         self._keycloak_authenticator = keycloak_authenticator
         
-        self.logger.debug(f"Token info stored, expires at {self._token_expires_at} UTC")
+        self.logger.info(f"Token info stored: expires_in={expires_in}s, expires_at={self._token_expires_at} UTC, buffer=30s")
     
     def is_token_expired(self) -> bool:
         """
@@ -79,7 +80,7 @@ class GCMAuthenticator:
             # No token info stored, assume expired
             return True
         
-        is_expired = datetime.utcnow() >= self._token_expires_at
+        is_expired = datetime.now(timezone.utc) >= self._token_expires_at
         if is_expired:
             self.logger.debug("Token has expired or is about to expire")
         return is_expired
@@ -113,13 +114,13 @@ class GCMAuthenticator:
             
             # Update stored token info with new expiration
             if self._keycloak_authenticator._token_expiry:
-                expires_in = int((self._keycloak_authenticator._token_expiry - datetime.utcnow()).total_seconds()) + 30
+                expires_in = int((self._keycloak_authenticator._token_expiry - datetime.now(timezone.utc)).total_seconds()) + 30
                 self.set_token_info(new_token, expires_in, self._keycloak_authenticator)
                 self.logger.info(f"Token refreshed successfully, new expiration in {expires_in}s")
             else:
                 # Fallback: assume 5 minute expiration if not available
                 self._access_token = new_token
-                self._token_expires_at = datetime.utcnow() + timedelta(seconds=240)  # 4 min buffer
+                self._token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=240)  # 4 min buffer
                 self.logger.warning("Token refreshed but expiration time unknown, using 4 minute default")
             
             self.logger.info("Successfully refreshed token and re-authorized with GCM")

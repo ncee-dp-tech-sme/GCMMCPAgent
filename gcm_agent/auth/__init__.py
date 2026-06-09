@@ -1,12 +1,14 @@
 """Authentication package for GCM Keycloak token retrieval and GCM authorization flows."""
 
 # Made with Bob
+# 2026-06-09 19:13 UTC - Refactored authenticate_gcm and get_client_factory: extracted helpers, moved imports to module level, consolidated logging
 # 2026-06-06 02:59 UTC - Updated get_client_factory to pass gcm_hostname to _client_factory for x-gcm-hostname header injection
 # 2026-06-06 00:27 UTC - Updated to pass token expiration info and Keycloak authenticator to GCMAuthenticator for refresh mechanism
 # 2026-06-05 21:59 UTC - Implemented custom exceptions, authenticate_gcm helper, and exports
 # 2026-06-05 21:04 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
 
 from typing import Tuple, Optional
+from datetime import datetime, timezone
 import httpx
 
 from gcm_agent.config.config_manager import KeycloakConfig, GCMServerConfig, AuthConfig
@@ -29,6 +31,61 @@ class TokenExpiredError(AuthenticationError):
 class InvalidCredentialsError(AuthenticationError):
     """Raised when provided credentials are invalid."""
     pass
+
+
+def _create_keycloak_authenticator(
+    keycloak_config: KeycloakConfig,
+    auth_config: AuthConfig,
+    password: str,
+    client_secret: str,
+) -> KeycloakAuthenticator:
+    """
+    Create and configure KeycloakAuthenticator instance.
+    
+    Args:
+        keycloak_config: Keycloak server configuration
+        auth_config: Authentication configuration
+        password: User password
+        client_secret: OAuth2 client secret
+    
+    Returns:
+        Configured KeycloakAuthenticator instance
+    """
+    keycloak_url = f"{keycloak_config.url}:{keycloak_config.port}"
+    
+    return KeycloakAuthenticator(
+        keycloak_url=keycloak_url,
+        realm=keycloak_config.realm,
+        client_id=auth_config.client_id,
+        username=auth_config.username,
+        password=password,
+        client_secret=client_secret,
+        verify_ssl=keycloak_config.verify_ssl,
+    )
+
+
+def _store_token_info(
+    gcm_auth: GCMAuthenticator,
+    keycloak: KeycloakAuthenticator,
+    access_token: str,
+    logger,
+) -> None:
+    """
+    Store token expiration info in GCMAuthenticator for refresh tracking.
+    
+    Args:
+        gcm_auth: GCMAuthenticator instance to store info in
+        keycloak: KeycloakAuthenticator instance to get expiry from
+        access_token: OAuth2 access token
+        logger: Logger instance for info messages
+    """
+    expires_in = keycloak.get_token_expires_in()
+    if expires_in:
+        gcm_auth.set_token_info(access_token, expires_in, keycloak)
+        logger.info(
+            f"Token expiration info stored: expires_in={expires_in}s "
+            f"(Keycloak expiry: {keycloak._token_expiry} UTC)"
+        )
 
 
 async def authenticate_gcm(
@@ -78,20 +135,11 @@ async def authenticate_gcm(
     try:
         # Step 1: Get Keycloak OAuth2 token
         logger.info("Step 1: Authenticating with Keycloak")
-        keycloak_url = f"{keycloak_config.url}:{keycloak_config.port}"
-        
-        keycloak = KeycloakAuthenticator(
-            keycloak_url=keycloak_url,
-            realm=keycloak_config.realm,
-            client_id=auth_config.client_id,
-            username=auth_config.username,
-            password=password,
-            client_secret=client_secret,
-            verify_ssl=keycloak_config.verify_ssl,
+        keycloak = _create_keycloak_authenticator(
+            keycloak_config, auth_config, password, client_secret
         )
-        
         access_token = await keycloak.get_token()
-        logger.info("Step 1 complete: Successfully obtained Keycloak token")
+        logger.info("Step 1 complete: Keycloak token obtained")
         
         # Step 2: Authorize with GCM user management
         logger.info("Step 2: Authorizing with GCM user management")
@@ -100,24 +148,17 @@ async def authenticate_gcm(
             hostname=gcm_config.hostname,
             verify_ssl=gcm_config.verify_ssl,
         )
-        
         await gcm_auth.authorize(access_token, auth_config.username)
-        logger.info("Step 2 complete: Successfully authorized with GCM")
+        logger.info("Step 2 complete: GCM authorization successful")
         
         # Store token info for expiration tracking and refresh
-        # Get token expiration from Keycloak's cached expiry
-        if keycloak._token_expiry:
-            from datetime import datetime
-            expires_in = int((keycloak._token_expiry - datetime.utcnow()).total_seconds()) + 30  # Add back the buffer
-            gcm_auth.set_token_info(access_token, expires_in, keycloak)
-            logger.debug(f"Token expiration info stored in GCMAuthenticator (expires_in={expires_in}s)")
+        _store_token_info(gcm_auth, keycloak, access_token, logger)
         
         # Step 3: Create authenticated client for MCP operations
         logger.info("Step 3: Creating authenticated HTTP client")
         authenticated_client = gcm_auth.create_authenticated_client(access_token)
-        logger.info("Step 3 complete: Authenticated client ready")
+        logger.info("Authentication flow completed successfully")
         
-        logger.info("Two-step authentication flow completed successfully")
         return access_token, authenticated_client
         
     except KeycloakAuthError as e:
@@ -177,20 +218,11 @@ async def get_client_factory(
     
     # Step 1: Get Keycloak OAuth2 token
     logger.info("Step 1: Authenticating with Keycloak")
-    keycloak_url = f"{keycloak_config.url}:{keycloak_config.port}"
-    
-    keycloak = KeycloakAuthenticator(
-        keycloak_url=keycloak_url,
-        realm=keycloak_config.realm,
-        client_id=auth_config.client_id,
-        username=auth_config.username,
-        password=password,
-        client_secret=client_secret,
-        verify_ssl=keycloak_config.verify_ssl,
+    keycloak = _create_keycloak_authenticator(
+        keycloak_config, auth_config, password, client_secret
     )
-    
     access_token = await keycloak.get_token()
-    logger.info("Step 1 complete: Successfully obtained Keycloak token")
+    logger.info("Step 1 complete: Keycloak token obtained")
     
     # Step 2: Authorize with GCM user management
     logger.info("Step 2: Authorizing with GCM user management")
@@ -199,20 +231,15 @@ async def get_client_factory(
         hostname=gcm_config.hostname,
         verify_ssl=gcm_config.verify_ssl,
     )
-    
     await gcm_auth.authorize(access_token, auth_config.username)
-    logger.info("Step 2 complete: Successfully authorized with GCM")
+    logger.info("Step 2 complete: GCM authorization successful")
     
     # Store token info for expiration tracking and refresh
-    if keycloak._token_expiry:
-        from datetime import datetime
-        expires_in = int((keycloak._token_expiry - datetime.utcnow()).total_seconds()) + 30
-        gcm_auth.set_token_info(access_token, expires_in, keycloak)
-        logger.debug(f"Token expiration info stored in GCMAuthenticator (expires_in={expires_in}s)")
+    _store_token_info(gcm_auth, keycloak, access_token, logger)
     
     # Step 3: Create client factory with gcm_hostname for x-gcm-hostname header
     factory = gcm_auth._client_factory(access_token, timeout, gcm_config.hostname)
-    logger.info(f"Client factory created successfully with verify_ssl={gcm_config.verify_ssl}")
+    logger.info(f"Client factory created with verify_ssl={gcm_config.verify_ssl}")
     
     # Return both factory and authenticator for token refresh capability
     return factory, gcm_auth

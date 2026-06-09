@@ -1,6 +1,7 @@
 """Main LangGraph agent module for coordinating prompts, tools, and GCM-specific workflows."""
 
 # Made with Bob
+# 2026-06-09 19:05 UTC - Updated create_react_agent to create_agent from langchain.agents (deprecated function fix)
 # 2026-06-06 03:10 UTC - Added OpenAI LLM support as alternative to WatsonX
 # 2026-06-06 01:30 UTC - Added error handling in stream_chat to prevent TaskGroup exceptions
 # 2026-06-05 22:13 UTC - Added tool limiting to respect WatsonX 128 tool limit
@@ -11,12 +12,12 @@
 # 2026-06-08 21:46 UTC - Added observability logging for tool selection and token tracking (Phase 4)
 
 from typing import List, Optional, AsyncGenerator, Union, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import time
 
 from langchain_ibm import ChatWatsonx
 from langchain_openai import ChatOpenAI
-from langgraph.prebuilt import create_react_agent
+from langchain.agents import create_agent
 from langgraph.graph import StateGraph, MessagesState, START, END
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_core.tools import Tool
@@ -214,9 +215,11 @@ class GCMAgent:
         # Get system prompt based on discovery mode
         system_prompt = get_system_prompt(self.agent_config.discovery_mode)
         
-        # Create agent using create_react_agent() wrapper (CRITICAL per AGENTS.md)
+        # Create agent using create_agent() from langchain.agents (CRITICAL per AGENTS.md)
+        # Note: create_react_agent was deprecated and replaced with create_agent
+        # Moved from langgraph.prebuilt to langchain.agents
         # Recursion limit is passed via config parameter in chat() and stream_chat() methods
-        agent = create_react_agent(
+        agent = create_agent(
             self.llm,
             self.tools,
         )
@@ -459,7 +462,7 @@ class GCMAgent:
             {
                 "role": "human" if isinstance(msg, HumanMessage) else "ai",
                 "content": msg.content,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             }
             for msg in self.history
         ]

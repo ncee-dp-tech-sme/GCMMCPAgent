@@ -16,7 +16,7 @@ import functools
 import inspect
 from pathlib import Path
 from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, timezone
 import uuid
 
 if TYPE_CHECKING:
@@ -336,7 +336,7 @@ class ObservabilityLogger:
             metadata: Additional metadata
         """
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "session_id": self._session_id,
             "event": "tool_selection",
             "query": query[:200],  # Truncate long queries
@@ -373,7 +373,7 @@ class ObservabilityLogger:
             metadata: Additional metadata
         """
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "session_id": self._session_id,
             "event": "tool_execution",
             "tool_name": tool_name,
@@ -415,7 +415,7 @@ class ObservabilityLogger:
             metadata: Additional metadata
         """
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "session_id": self._session_id,
             "event": "token_usage",
             "query": query[:200],  # Truncate
@@ -451,7 +451,7 @@ class ObservabilityLogger:
             metadata: Additional metadata
         """
         log_data = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "session_id": self._session_id,
             "event": "performance_metrics",
             "query": query[:200],  # Truncate

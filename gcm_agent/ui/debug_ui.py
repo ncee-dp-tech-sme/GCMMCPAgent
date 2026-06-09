@@ -7,7 +7,7 @@ import gradio as gr
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from gcm_agent.utils.logger import get_agent_logger
@@ -41,7 +41,7 @@ class DebugUI:
             data: Log data dictionary
         """
         entry = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
             "type": log_type,
             "data": data
         }

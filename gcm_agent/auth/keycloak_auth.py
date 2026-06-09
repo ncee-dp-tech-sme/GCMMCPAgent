@@ -9,7 +9,7 @@ import base64
 import json
 import time
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -130,10 +130,10 @@ class KeycloakAuthenticator:
 
                 # Calculate token expiry (with 30 second buffer)
                 expires_in = token_data.get("expires_in", 300)
-                self._token_expiry = datetime.utcnow() + timedelta(seconds=expires_in - 30)
-
+                self._token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in - 30)
+                
                 self.logger.info(
-                    f"Successfully obtained access token (expires in {expires_in}s)"
+                    f"Successfully obtained access token: expires_in={expires_in}s, expires_at={self._token_expiry} UTC"
                 )
                 return self._access_token
 
@@ -211,10 +211,10 @@ class KeycloakAuthenticator:
 
                 # Calculate token expiry (with 30 second buffer)
                 expires_in = token_data.get("expires_in", 300)
-                self._token_expiry = datetime.utcnow() + timedelta(seconds=expires_in - 30)
-
+                self._token_expiry = datetime.now(timezone.utc) + timedelta(seconds=expires_in - 30)
+                
                 self.logger.info(
-                    f"Successfully refreshed access token (expires in {expires_in}s)"
+                    f"Successfully refreshed access token: expires_in={expires_in}s, expires_at={self._token_expiry} UTC"
                 )
                 return self._access_token
 
@@ -244,7 +244,7 @@ class KeycloakAuthenticator:
             return False
 
         # Check cached expiry first
-        if self._token_expiry and datetime.utcnow() >= self._token_expiry:
+        if self._token_expiry and datetime.now(timezone.utc) >= self._token_expiry:
             self.logger.debug("Token expired based on cached expiry time")
             return False
 
@@ -305,6 +305,21 @@ class KeycloakAuthenticator:
 
         except Exception as e:
             raise ValueError(f"Failed to parse JWT token: {e}") from e
+
+    def get_token_expires_in(self) -> Optional[int]:
+        """
+        Get remaining token lifetime in seconds.
+        
+        Returns:
+            Remaining seconds until token expiry (with buffer added back),
+            or None if no token expiry is cached.
+        """
+        if not self._token_expiry:
+            return None
+        
+        remaining = int((self._token_expiry - datetime.now(timezone.utc)).total_seconds())
+        # Add back the 30s buffer that was subtracted during token storage
+        return remaining + 30
 
     def clear_cache(self) -> None:
         """Clear cached tokens and expiry information."""

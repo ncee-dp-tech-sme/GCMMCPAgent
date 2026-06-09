@@ -10,9 +10,9 @@ class TestGCMAgent:
     """Test GCM agent functionality."""
     
     @pytest.mark.asyncio
-    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
-    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
-    async def test_initialize_agent(self, mock_create_react_agent, mock_llm_class):
+    @patch('gcm_agent.agent.gcm_agent.ChatWatsonx')
+    @patch('langchain.agents.create_agent')
+    async def test_initialize_agent(self, mock_create_agent, mock_llm_class):
         """Test agent initialization with LLM and tools."""
         from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
         
@@ -20,7 +20,7 @@ class TestGCMAgent:
         mock_llm_class.return_value = mock_llm
         
         mock_graph = Mock()
-        mock_create_react_agent.return_value = mock_graph
+        mock_create_agent.return_value = mock_graph
         
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
@@ -47,12 +47,12 @@ class TestGCMAgent:
         await agent.initialize()
         
         assert mock_llm_class.called
-        assert mock_create_react_agent.called
+        assert mock_create_agent.called
     
     @pytest.mark.asyncio
-    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
-    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
-    async def test_chat(self, mock_create_react_agent, mock_llm_class):
+    @patch('gcm_agent.agent.gcm_agent.ChatWatsonx')
+    @patch('langchain.agents.create_agent')
+    async def test_chat(self, mock_create_agent, mock_llm_class):
         """Test processing a user message through the agent."""
         from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
         from langchain_core.messages import AIMessage
@@ -66,7 +66,7 @@ class TestGCMAgent:
                 AIMessage(content='Test response')
             ]
         }
-        mock_create_react_agent.return_value = mock_graph
+        mock_create_agent.return_value = mock_graph
         
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
@@ -97,9 +97,9 @@ class TestGCMAgent:
         assert mock_graph.ainvoke.called
     
     @pytest.mark.asyncio
-    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
-    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
-    async def test_agent_with_tools(self, mock_create_react_agent, mock_llm_class):
+    @patch('gcm_agent.agent.gcm_agent.ChatWatsonx')
+    @patch('langchain.agents.create_agent')
+    async def test_agent_with_tools(self, mock_create_agent, mock_llm_class):
         """Test agent initialization with multiple tools."""
         from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
         
@@ -107,7 +107,7 @@ class TestGCMAgent:
         mock_llm_class.return_value = mock_llm
         
         mock_graph = Mock()
-        mock_create_react_agent.return_value = mock_graph
+        mock_create_agent.return_value = mock_graph
         
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()
@@ -138,13 +138,13 @@ class TestGCMAgent:
         await agent.initialize()
         
         # Verify tools were passed to agent creation
-        call_args = mock_create_react_agent.call_args
+        call_args = mock_create_agent.call_args
         assert call_args is not None
     
     @pytest.mark.asyncio
-    @patch('gcm_agent.agent.gcm_agent.WatsonxLLM')
-    @patch('gcm_agent.agent.gcm_agent.create_react_agent')
-    async def test_agent_history(self, mock_create_react_agent, mock_llm_class):
+    @patch('gcm_agent.agent.gcm_agent.ChatWatsonx')
+    @patch('langchain.agents.create_agent')
+    async def test_agent_history(self, mock_create_agent, mock_llm_class):
         """Test agent maintains conversation history."""
         from gcm_agent.config.config_manager import WatsonXConfig, AgentConfig
         from langchain_core.messages import AIMessage
@@ -158,7 +158,7 @@ class TestGCMAgent:
                 AIMessage(content='Response 1')
             ]
         }
-        mock_create_react_agent.return_value = mock_graph
+        mock_create_agent.return_value = mock_graph
         
         mock_mcp_client = AsyncMock()
         mock_tool_loader = AsyncMock()

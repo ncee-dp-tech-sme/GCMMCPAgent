@@ -5,6 +5,81 @@ This file provides guidance to agents when working with code in this repository.
 ## Repository Type
 Full-stack Python application - IBM Guardium Cryptography Manager MCP Server integration with LangGraph agent.
 
+## Recent Updates (2026-06-09)
+
+### Fixed Deprecated create_react_agent Function (2026-06-09 19:05 UTC)
+
+**Issue:**
+The `create_react_agent` function was deprecated. The deprecation message instructed to use `create_agent` from `langchain.agents` instead.
+
+**Changes Made:**
+1. **gcm_agent/agent/gcm_agent.py** (line 19):
+   - Changed: `from langgraph.prebuilt import create_react_agent`
+   - To: `from langchain.agents import create_agent`
+   - Updated function call from `create_react_agent()` to `create_agent()`
+   - Updated comments to document the migration
+
+2. **tests/test_agent.py**:
+   - Updated all mock patches from `gcm_agent.agent.gcm_agent.create_react_agent` to `langchain.agents.create_agent`
+   - Updated all mock variable names from `mock_create_react_agent` to `mock_create_agent`
+   - Fixed 4 test methods: `test_initialize_agent`, `test_chat`, `test_agent_with_tools`, `test_agent_history`
+   - Also corrected mock patches from `WatsonxLLM` to `ChatWatsonx` (proper class name)
+
+3. **requirements.txt**:
+   - Added comment documenting that `langchain>=0.1.0` is required for the new import path
+   - No version changes needed - existing constraint already supports the new location
+
+**Impact:**
+- Eliminates deprecation warnings
+- Future-proofs codebase for upcoming LangChain releases
+- No functional changes - same API, just different function name and import path
+- All tests updated to match new import location
+
+**Verification:**
+- Code compiles without syntax errors
+- Import path now matches LangChain's current module structure
+- Test mocks updated to reflect new import location
+
+## Recent Updates (2026-06-08)
+
+### Fixed Token Expiration Buffer Causing 2-Minute Reconnects (2026-06-08 22:53 UTC)
+
+**Root Cause:**
+The MCP client was disconnecting and reconnecting every 2 minutes due to overly aggressive token expiration buffer stacking:
+
+1. Keycloak issues tokens with `expires_in` (typically 180 seconds = 3 minutes)
+2. `KeycloakAuthenticator` applies 30-second buffer: `expires_in - 30`
+3. `GCMAuthenticator` was applying ANOTHER 60-second buffer: `expires_in - 60`
+4. Combined buffers: 90 seconds total, leaving only 90 seconds of usable token time
+5. For 3-minute tokens: 180s - 90s = 90 seconds, but with calculation flow it resulted in 120s (2 minutes)
+
+**The Math (3-minute token):**
+- Token issued: `expires_in = 180` seconds
+- Keycloak stores: `180 - 30 = 150` seconds
+- Passed to GCM: `150 + 30 = 180` seconds (buffer added back)
+- GCM applied: `180 - 60 = 120` seconds = **2 minutes** ✓
+- Result: Token marked expired after 2 minutes, triggering reconnect
+
+**The Fix ([`gcm_agent/auth/gcm_auth.py`](gcm_agent/auth/gcm_auth.py:65-67)):**
+Reduced `GCMAuthenticator` buffer from 60 seconds to 30 seconds:
+```python
+# OLD: 60-second buffer (too aggressive)
+self._token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in - 60)
+
+# NEW: 30-second buffer (matches Keycloak)
+self._token_expires_at = datetime.utcnow() + timedelta(seconds=expires_in - 30)
+```
+
+**Impact:**
+- 3-minute tokens now usable for ~2.5 minutes instead of 2 minutes
+- 5-minute tokens now usable for ~4.5 minutes instead of 4 minutes
+- Total buffer remains 60 seconds (30s Keycloak + 30s GCM) - reasonable safety margin
+- Eliminates unnecessary disconnect/reconnect cycles
+- Reduces log noise and improves connection stability
+
+**Verification:**
+Monitor logs for disconnect/reconnect frequency. Should now occur at token expiration intervals (3-5 minutes) minus 60-second total buffer, not every 2 minutes.
+
 
 
 ### Phase 4: Observability & Debugging (2026-06-08 21:47 UTC) - COMPLETED ✓
@@ -721,7 +796,8 @@ Users can override defaults via the configuration UI or by modifying `AgentConfi
 - Execute tool runs workflows in sandboxed environment with RBAC enforcement
 
 ### LangGraph Agent Structure
-- Must use `create_agent()` wrapper, not raw LLM
+- Must use `create_agent()` from `langchain.agents` (replaces deprecated `create_react_agent`)
+- Import: `from langchain.agents import create_agent`
 - Agent node must be async: `async def agent_node(state: MessagesState)`
 - Graph structure: START → agent → END (no tool node needed - handled internally)
 - History management: append HumanMessage, extract AI messages without tool_calls
