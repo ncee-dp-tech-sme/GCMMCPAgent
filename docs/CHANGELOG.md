@@ -1,29 +1,45 @@
 # Changelog
 
+## 2026-06-09 - Bug Fix: Invalid debug_ui Parameter in Agent Initialization
+
+### Fixed
+- **Agent Initialization Error**: Removed invalid `debug_ui` parameter from `create_gcm_agent()` call in `gcm_agent/ui/chat_ui.py` (line 221)
+- The `create_gcm_agent()` function signature only accepts `config: AgentSetupConfig` parameter
+- Debug UI instance is still created and stored on agent object for observability logging
+- **Impact**: Agent initialization now works without "unexpected keyword argument 'debug_ui'" error
+
 ## 2026-06-09 - UI Enhancement: Automatic Table Formatting
 
 ### Added
-- **Automatic Table Formatting**: Agent responses containing pipe-delimited markdown tables are now automatically converted to styled HTML tables for improved readability
+- **Automatic Table Formatting**: Agent responses containing pipe-delimited markdown tables are automatically reformatted for improved readability in chat
 - New module: `gcm_agent/utils/table_formatter.py` with table detection and formatting logic
-- Professional table styling with:
-  - Purple gradient header background (#667eea to #764ba2)
-  - Alternating row colors (white/light gray #f8f9fa)
-  - Responsive horizontal scrolling for wide tables
-  - Word wrapping for long content (max 200px cell width)
-  - Box shadow for visual depth
 - Test suite: `tests/test_table_formatter.py` with comprehensive coverage
 - Documentation: `docs/TABLE_FORMATTING.md` with implementation details
 
 ### Changed
+- Initial implementation targeted styled HTML table rendering in the chat UI
+- Implementation was then changed from HTML output to enhanced markdown formatting for Gradio compatibility
 - Updated `gcm_agent/ui/chat_ui.py` to integrate table formatting into chat response streaming
-- Modified Gradio chatbot component to enable HTML rendering (`type="messages"`, `render_markdown=True`)
 - Updated `gcm_agent/utils/__init__.py` to export `format_response_tables`
 
+### Current UI Limitation
+- Because the formatter now emits markdown instead of styled HTML, table rendering currently follows the active Gradio/theme defaults
+- In the current UI this means tables appear with a **black background, white text, and white borders**
+- The previous custom visual styling (purple gradient headers, alternating row colors, box shadow, and richer table theming) is not currently applied
+
 ### Impact
-- **Significantly improved readability** of tabular data (keys, assets, policy violations, etc.)
+- **Improved compatibility** with the current Gradio chat rendering path
 - **Zero configuration required** - works automatically
 - **Minimal performance overhead** (<1ms per table)
 - **Backward compatible** - non-table text unchanged
+- **Known visual regression**: table styling is currently limited to default markdown rendering
+
+### Follow-up Fixes
+- **Debug UI Log Wiring Fix** (2026-06-09 21:48 UTC)
+  - Fixed the chat initialization path to create the shared debug UI instance before agent creation
+  - Passed the shared debug UI into agent creation so the observability logger can forward events to the active dashboard
+  - Added regression coverage in `tests/test_chat_ui_refactoring.py` for debug UI wiring during initialization
+  - **Impact**: the debug dashboard now receives live observability logs instead of remaining empty after agent startup
 
 ## 2026-06-09 - Code Quality: Logger Refactoring for Performance and Maintainability
 
@@ -217,6 +233,14 @@ All changes maintain **100% backward compatibility** - no API changes, existing 
 - **Improved Testability**: Dependency injection enables isolated unit testing
 - **Easier Extension**: Adding new LLM providers requires minimal changes
 - **Consistent Patterns**: All validation and error handling follows same patterns
+
+#### Follow-up Fixes
+
+8. **Fixed Sequential Chat Table Rendering Regression** (2026-06-09 21:45 UTC)
+   - Confirmed assistant message updates are rebuilt from the current turn's streamed response only
+   - Prevents a previously rendered asset table from appearing again when the next request asks for a single asset's details
+   - Added regression coverage in `tests/test_chat_ui_refactoring.py` for back-to-back "show all assets" and "show details" requests
+   - **Impact**: Detail responses now render independently instead of visually inheriting prior table output
 
 #### Files Modified
 

@@ -212,6 +212,10 @@ async def initialize_agent() -> str:
             client_secret=configs['client_secret'],
         )
         
+        # Create shared debug UI before agent creation so observability logging
+        # is wired to the active UI instance from the start.
+        debug_ui = get_debug_ui_instance()
+        
         # Create and initialize agent using refactored function
         logger.debug(f"Creating GCM Agent with {llm_config.provider} LLM")
         _agent_state.agent = await create_gcm_agent(setup_config)
@@ -220,8 +224,7 @@ async def initialize_agent() -> str:
         _agent_state.mcp_client = _agent_state.agent.mcp_client
         _agent_state.tool_loader = _agent_state.agent.tool_loader
         
-        # Integrate debug UI
-        debug_ui = get_debug_ui_instance()
+        # Keep reference on agent for UI integrations that inspect it directly
         _agent_state.agent.debug_ui = debug_ui
         
         _agent_state.initialized = True
@@ -272,13 +275,17 @@ async def chat_response(message: str, history: List[dict], agent_state: Optional
         # Add placeholder for assistant response
         history.append({"role": "assistant", "content": ""})
         
-        # Stream response - accumulate chunks properly
+        # Stream response - accumulate chunks for the current assistant turn only
         response = ""
         async for chunk in state.agent.stream_chat(message):
             response += chunk  # Accumulate chunks instead of overwriting
-            # Format tables in the accumulated response for better presentation
+            
+            # Rebuild the assistant message from only the current turn's response.
+            # This prevents previously rendered table output from being visually
+            # carried into a new answer when the next response is not itself a table.
             formatted_response = format_response_tables(response)
-            # Update the last message in history with formatted response
+            
+            # Update the last message in history with only the current formatted response
             history[-1] = {"role": "assistant", "content": formatted_response}
             yield history, ""
         
