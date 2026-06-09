@@ -6,6 +6,7 @@
 # 2026-06-09 21:55 UTC - Reverted to HTML with light theme styling for better readability in dark mode
 # 2026-06-09 22:00 UTC - Added intelligent content detection to hide tables when detail content is present
 # 2026-06-09 22:32 UTC - Fixed overly aggressive smart detection - now requires 10+ lines and 60%+ structured content
+# 2026-06-09 22:40 UTC - Fixed multi-table detection - hides first table when second more-specific table exists
 
 import re
 from typing import Optional, List, Tuple
@@ -123,8 +124,8 @@ def format_response_tables(text: str) -> str:
     
     Intelligently handles cases where a response contains both a table and additional
     content (e.g., detail queries that include context from previous list queries).
-    When substantial content with field:value pairs exists after the table, only the
-    post-table content is shown (and any tables within it are formatted).
+    When a second, more specific table exists after the first, only the second table
+    and surrounding content is shown.
     
     Args:
         text: Response text that may contain tables
@@ -156,18 +157,30 @@ def format_response_tables(text: str) -> str:
     table_lines = '\n'.join(lines[header_idx:table_end_idx])
     after_table = '\n'.join(lines[table_end_idx:])
     
-    # Smart content detection: If there's substantial structured content after the table,
-    # it's likely a detail query where the table is just context. Show only the details.
+    # Check if there's a SECOND table in the after_table content
     after_table_stripped = after_table.strip()
     if after_table_stripped:
-        # Count meaningful lines (non-empty, non-whitespace)
+        second_table_info = _detect_table_structure(after_table_stripped)
+        
+        if second_table_info:
+            # There's a second table! This is likely a detail query where:
+            # - First table = broad list (e.g., all 120 assets)
+            # - Second table = filtered/specific result (e.g., 1 asset with specific hostname)
+            # Hide the first table and show only content from after the first table
+            result_parts = []
+            if before_table.strip():
+                result_parts.append(before_table.strip())
+            # Recursively format the after_table content (which contains the second table)
+            formatted_after = format_response_tables(after_table_stripped)
+            result_parts.append(formatted_after)
+            return '\n\n'.join(result_parts)
+        
+        # No second table, but check for substantial structured content
         meaningful_lines = [line for line in after_table_stripped.split('\n') if line.strip()]
         
         # If there are 10+ meaningful lines after the table, it's likely the main content
-        # (e.g., asset details, key details, etc.)
         if len(meaningful_lines) >= 10:
             # Check if after_table is PRIMARILY structured data (field: value pairs or markdown bold labels)
-            # Count lines that look like field:value pairs (not just any line with a colon)
             field_value_lines = 0
             for line in meaningful_lines[:15]:  # Check first 15 lines
                 stripped = line.strip()
@@ -179,7 +192,6 @@ def format_response_tables(text: str) -> str:
             # If 60%+ of lines are structured field:value pairs, it's detail content
             if field_value_lines >= len(meaningful_lines[:15]) * 0.6:
                 # This is a detail query - show only the details, not the first table
-                # But recursively format any tables in the detail content
                 result_parts = []
                 if before_table.strip():
                     result_parts.append(before_table.strip())

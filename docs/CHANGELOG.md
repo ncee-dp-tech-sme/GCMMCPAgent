@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-06-09 - Bug Fix: Table Formatter Multi-Table Detection
+
+### Fixed
+- **Multi-Table Detection for Detail Queries** (22:40 UTC)
+  - **Problem**: When querying details after listing all items, both the broad list table AND the filtered detail table were displayed, creating visual clutter
+  - **Root Cause**: Detection logic didn't handle multiple tables in a single response
+  - **Example**: "show all assets" (120 assets) → "show details for asset X" displayed both tables:
+    1. First table: All 120 assets (first 50 shown)
+    2. Explanatory text: "The response includes the first 50 assets..."
+    3. Filter description: "All IT assets whose hostname is kushaq.dev.fyre.ibm.com"
+    4. Second table: Just 1 filtered asset
+  - **Solution**: Added multi-table detection in `format_response_tables()`:
+    - After finding first table, check if second table exists in after-table content
+    - If second table found, hide first (broader) table
+    - Show only content after first table (includes second more-specific table)
+    - Recursively format any tables in the after-table content
+  - **Impact**:
+    - ✅ Only filtered/specific table shown when multiple tables exist
+    - ✅ Explanatory text preserved
+    - ✅ Clean, focused response showing only relevant data
+    - ✅ First table hidden when second more-specific table exists
+  - **Files Modified**:
+    - `gcm_agent/utils/table_formatter.py` (lines 145-157) - Added multi-table detection
+    - `tests/test_multi_table_detection.py` - Comprehensive test suite (3 tests, all passing)
+    - `docs/TABLE_FORMATTER_MULTI_TABLE_FIX.md` - Full documentation
+    - `AGENTS.md` - Updated with fix details
+
 ## 2026-06-09 - Bug Fix: Table Formatter Smart Detection
 
 ### Fixed
