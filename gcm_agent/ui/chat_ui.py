@@ -398,6 +398,8 @@ def _build_chatbot_section() -> Tuple[gr.Chatbot, gr.Textbox]:
         height=500,
         show_label=True,
         avatar_images=(None, "🤖"),
+        render_markdown=True,
+        sanitize_html=False,
     )
     
     with gr.Row():

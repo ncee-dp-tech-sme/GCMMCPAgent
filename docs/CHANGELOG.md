@@ -1,12 +1,22 @@
 # Changelog
 
-## 2026-06-09 - Bug Fix: Invalid debug_ui Parameter in Agent Initialization
+## 2026-06-09 - Bug Fixes: Agent Initialization and Table Rendering
 
 ### Fixed
-- **Agent Initialization Error**: Removed invalid `debug_ui` parameter from `create_gcm_agent()` call in `gcm_agent/ui/chat_ui.py` (line 221)
-- The `create_gcm_agent()` function signature only accepts `config: AgentSetupConfig` parameter
-- Debug UI instance is still created and stored on agent object for observability logging
-- **Impact**: Agent initialization now works without "unexpected keyword argument 'debug_ui'" error
+1. **Agent Initialization Error**: Removed invalid `debug_ui` parameter from `create_gcm_agent()` call in `gcm_agent/ui/chat_ui.py` (line 221)
+   - The `create_gcm_agent()` function signature only accepts `config: AgentSetupConfig` parameter
+   - Debug UI instance is still created and stored on agent object for observability logging
+   - **Impact**: Agent initialization now works without "unexpected keyword argument 'debug_ui'" error
+
+2. **Table Rendering Dark Mode Issue**: Reverted table formatter from markdown to HTML with light theme styling
+   - **Problem**: Tables were rendering with black background and white text (hard to read)
+   - **Root Cause**: Markdown tables inherit Gradio's dark theme styling
+   - **Solution**: Switched back to HTML tables with explicit light theme styling
+   - **Changes**:
+     - `gcm_agent/utils/table_formatter.py`: Reverted `_format_as_html_table()` with white background, dark text
+     - `gcm_agent/ui/chat_ui.py`: Enabled HTML rendering in chatbot (`sanitize_html=False`)
+   - **Styling**: Purple gradient headers, alternating row colors (white/#f8f9fa), dark text (#1a1a1a)
+   - **Impact**: Tables now readable with professional styling regardless of Gradio theme
 
 ## 2026-06-09 - UI Enhancement: Automatic Table Formatting
 
