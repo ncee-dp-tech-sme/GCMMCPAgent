@@ -6,6 +6,7 @@ The GCM Agent now automatically detects and formats tabular data in responses fo
 
 ## Implementation Date
 2026-06-09 21:22 UTC
+**Updated:** 2026-06-09 22:00 UTC - Added intelligent content detection
 
 ## Problem Solved
 
@@ -32,6 +33,50 @@ Detected tables are converted to styled HTML tables with:
 - **Alternating row colors**: White and light gray for easy scanning
 - **Responsive design**: Horizontal scrolling for wide tables
 - **Word wrapping**: Long content wraps within cells (max 200px width)
+- **Intelligent content detection**: Automatically hides context tables when detail content is present
+- **Recursive formatting**: Formats nested tables within detail content
+
+### Smart Content Detection (Added 2026-06-09 22:00 UTC)
+
+The formatter now intelligently handles responses that contain both a list table and detail content:
+
+**Problem:** When you ask "show all assets" followed by "show details for asset X", the agent may include the full asset list table as context, followed by the specific asset details. This creates visual clutter with duplicate information.
+
+**Solution:** The formatter detects when:
+1. A response has 5+ meaningful lines after a table
+2. The content contains field:value pairs (e.g., "**Asset ID:** value" or "Field: Value")
+
+When both conditions are met, it:
+- Hides the context table (the list of all assets)
+- Shows only the detail content
+- Recursively formats any tables within the detail content (e.g., detail field tables)
+
+**Example:**
+
+Query 1: "show all assets"
+```
+| Asset ID | Type | Hostname |
+|----------|------|----------|
+| id-1 | Database | host-1 |
+| id-2 | Service | host-2 |
+```
+✅ Shows formatted HTML table
+
+Query 2: "show details for asset id-1"
+```
+[Context table with all assets - HIDDEN]
+
+**Asset ID:** id-1
+
+| Field | Value |
+|-------|-------|
+| Type | Database |
+| Hostname | host-1 |
+```
+✅ Hides the context table  
+✅ Shows "**Asset ID:** id-1"  
+✅ Formats the detail table as HTML
+
 - **Box shadow**: Subtle shadow for depth
 
 ## Technical Details

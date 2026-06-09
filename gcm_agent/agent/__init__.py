@@ -49,7 +49,7 @@ async def _cleanup_mcp_client(mcp_client: Optional['GCMMCPClient'], logger) -> N
             logger.warning(f"Failed to cleanup MCP client: {cleanup_error}")
 
 
-async def create_gcm_agent(config: AgentSetupConfig) -> GCMAgent:
+async def create_gcm_agent(config: AgentSetupConfig, debug_ui: Optional['DebugUI'] = None) -> GCMAgent:
     """
     Create and initialize GCM Agent with all dependencies.
     
@@ -59,6 +59,7 @@ async def create_gcm_agent(config: AgentSetupConfig) -> GCMAgent:
     
     Args:
         config: Consolidated agent setup configuration (AgentSetupConfig)
+        debug_ui: Optional debug UI instance for real-time observability logs
     
     Returns:
         Initialized GCM Agent ready for use
@@ -138,6 +139,7 @@ async def create_gcm_agent(config: AgentSetupConfig) -> GCMAgent:
             tool_loader=tool_loader,
             agent_config=config.agent_config,
             llm_config=config.llm_config,
+            debug_ui=debug_ui,
         )
         
         # Initialize agent (load tools, create graph)

@@ -4,6 +4,8 @@
 # 2026-06-09 21:22 UTC - Initial implementation of table detection and HTML formatting
 # 2026-06-09 21:37 UTC - Switched from HTML to enhanced markdown for Gradio compatibility
 # 2026-06-09 21:55 UTC - Reverted to HTML with light theme styling for better readability in dark mode
+# 2026-06-09 22:00 UTC - Added intelligent content detection to hide tables when detail content is present
+# 2026-06-09 22:32 UTC - Fixed overly aggressive smart detection - now requires 10+ lines and 60%+ structured content
 
 import re
 from typing import Optional, List, Tuple
@@ -119,11 +121,16 @@ def format_response_tables(text: str) -> str:
     """
     Detect and format tables in response text.
     
+    Intelligently handles cases where a response contains both a table and additional
+    content (e.g., detail queries that include context from previous list queries).
+    When substantial content with field:value pairs exists after the table, only the
+    post-table content is shown (and any tables within it are formatted).
+    
     Args:
         text: Response text that may contain tables
         
     Returns:
-        Text with tables formatted as styled HTML
+        Text with tables formatted as styled HTML, or just the relevant content
     """
     if not text or '|' not in text:
         return text
@@ -149,7 +156,39 @@ def format_response_tables(text: str) -> str:
     table_lines = '\n'.join(lines[header_idx:table_end_idx])
     after_table = '\n'.join(lines[table_end_idx:])
     
-    # Format table as HTML
+    # Smart content detection: If there's substantial structured content after the table,
+    # it's likely a detail query where the table is just context. Show only the details.
+    after_table_stripped = after_table.strip()
+    if after_table_stripped:
+        # Count meaningful lines (non-empty, non-whitespace)
+        meaningful_lines = [line for line in after_table_stripped.split('\n') if line.strip()]
+        
+        # If there are 10+ meaningful lines after the table, it's likely the main content
+        # (e.g., asset details, key details, etc.)
+        if len(meaningful_lines) >= 10:
+            # Check if after_table is PRIMARILY structured data (field: value pairs or markdown bold labels)
+            # Count lines that look like field:value pairs (not just any line with a colon)
+            field_value_lines = 0
+            for line in meaningful_lines[:15]:  # Check first 15 lines
+                stripped = line.strip()
+                # Match patterns like "Field: value" or "**Field**: value" or "**Field**"
+                if (stripped.startswith('**') or
+                    (': ' in stripped and not stripped.startswith('If ') and not stripped.startswith('The '))):
+                    field_value_lines += 1
+            
+            # If 60%+ of lines are structured field:value pairs, it's detail content
+            if field_value_lines >= len(meaningful_lines[:15]) * 0.6:
+                # This is a detail query - show only the details, not the first table
+                # But recursively format any tables in the detail content
+                result_parts = []
+                if before_table.strip():
+                    result_parts.append(before_table.strip())
+                # Recursively format tables in the after_table content
+                formatted_after = format_response_tables(after_table_stripped)
+                result_parts.append(formatted_after)
+                return '\n\n'.join(result_parts)
+    
+    # Standard table formatting: show the table (and any content before/after)
     formatted_table = _format_as_html_table(table_lines, 0, 1)
     
     # Combine parts
@@ -157,8 +196,10 @@ def format_response_tables(text: str) -> str:
     if before_table.strip():
         result_parts.append(before_table.strip())
     result_parts.append(formatted_table)
-    if after_table.strip():
-        result_parts.append(after_table.strip())
+    if after_table_stripped:
+        # Recursively format any tables in after_table content
+        formatted_after = format_response_tables(after_table_stripped)
+        result_parts.append(formatted_after)
     
     return '\n\n'.join(result_parts)
 

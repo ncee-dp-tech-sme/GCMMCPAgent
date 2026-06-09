@@ -218,7 +218,7 @@ async def initialize_agent() -> str:
         
         # Create and initialize agent using refactored function
         logger.debug(f"Creating GCM Agent with {llm_config.provider} LLM")
-        _agent_state.agent = await create_gcm_agent(setup_config)
+        _agent_state.agent = await create_gcm_agent(setup_config, debug_ui=debug_ui)
         
         # Store MCP client and tool loader references for cleanup
         _agent_state.mcp_client = _agent_state.agent.mcp_client

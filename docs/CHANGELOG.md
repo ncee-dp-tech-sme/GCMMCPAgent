@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-06-09 - Bug Fix: Table Formatter Smart Detection
+
+### Fixed
+- **Table Formatter Smart Detection Too Aggressive** (22:32 UTC)
+  - **Problem**: When listing assets with hostname search, tables were incorrectly hidden, showing only first asset's details instead of all 21 assets
+  - **Root Cause**: Smart detection triggered on 5+ lines after table with ANY `:` characters, causing explanatory text to incorrectly trigger detail mode
+  - **Solution**: Made detection more strict:
+    - Requires 10+ meaningful lines (increased from 5)
+    - Requires 60%+ of lines to be structured field:value pairs
+    - Excludes lines starting with "If " or "The " from field:value detection
+  - **Impact**:
+    - ✅ List queries with explanatory text now show tables correctly
+    - ✅ Detail queries still hide context tables (intended behavior)
+    - ✅ Hostname searches show all 21 assets, not just 1
+    - ✅ Short summaries don't trigger hiding
+  - **Files Modified**:
+    - `gcm_agent/utils/table_formatter.py` - Updated smart detection logic
+    - `tests/test_table_formatter_fix.py` - Comprehensive test suite (4 tests, all passing)
+    - `docs/TABLE_FORMATTER_FIX.md` - Full documentation
+    - `AGENTS.md` - Updated with fix details
+
 ## 2026-06-09 - Bug Fixes: Agent Initialization and Table Rendering
 
 ### Fixed

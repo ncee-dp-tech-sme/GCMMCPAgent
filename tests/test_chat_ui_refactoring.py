@@ -2,6 +2,8 @@
 
 # Made with Bob
 # 2026-06-09 20:47 UTC - Created comprehensive tests for chat_ui refactoring
+# 2026-06-09 21:45 UTC - Added regression test for sequential table/detail chat rendering
+# 2026-06-09 21:48 UTC - Added regression test for debug UI wiring during agent initialization
 
 import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
@@ -15,6 +17,7 @@ from gcm_agent.ui.chat_ui import (
     _handle_initialization_error,
     chat_response,
     AgentState,
+    initialize_agent,
 )
 
 
@@ -259,6 +262,57 @@ class TestChatResponse:
         assert "Test error" in final_history[1]["content"]
     
     @pytest.mark.asyncio
+    async def test_chat_response_sequential_requests_do_not_retain_previous_table(self):
+        """Test that a new detail response does not include the previous table output."""
+        mock_agent = Mock()
+        
+        async def first_stream(message):
+            yield "| ID | Name |\n"
+            yield "|---|---|\n"
+            yield "| b59136db-aea4-4a15-9da1-3725d8fe87f3 | Asset One |\n"
+        
+        async def second_stream(message):
+            yield "Asset Details\n"
+            yield "ID: b59136db-aea4-4a15-9da1-3725d8fe87f3\n"
+            yield "Type: key\n"
+        
+        async def mock_stream_chat(message):
+            if "show all assets" in message.lower():
+                async for chunk in first_stream(message):
+                    yield chunk
+            else:
+                async for chunk in second_stream(message):
+                    yield chunk
+        
+        mock_agent.stream_chat = mock_stream_chat
+        
+        agent_state = AgentState()
+        agent_state.agent = mock_agent
+        agent_state.initialized = True
+        
+        history = []
+        
+        async for hist, _ in chat_response("show all assets", history, agent_state):
+            first_history = hist
+        
+        first_assistant_content = first_history[-1]["content"]
+        assert "| ID " in first_assistant_content
+        assert "Asset One" in first_assistant_content
+        
+        async for hist, _ in chat_response(
+            "show details of the asset with id b59136db-aea4-4a15-9da1-3725d8fe87f3",
+            history,
+            agent_state
+        ):
+            second_history = hist
+        
+        second_assistant_content = second_history[-1]["content"]
+        assert "Asset Details" in second_assistant_content
+        assert "Type: key" in second_assistant_content
+        assert "| ID " not in second_assistant_content
+        assert "Asset One" not in second_assistant_content
+    
+    @pytest.mark.asyncio
     async def test_chat_response_generic_exception(self):
         """Test consolidated error handling for generic exceptions."""
         mock_agent = Mock()
@@ -277,6 +331,43 @@ class TestChatResponse:
         assert len(final_history) == 2
         assert "Unexpected error" in final_history[1]["content"]
         assert "Generic error" in final_history[1]["content"]
+
+
+class TestInitializeAgent:
+    """Test agent initialization wiring."""
+
+    @pytest.mark.asyncio
+    async def test_initialize_agent_passes_shared_debug_ui_to_agent_creation(self):
+        """Test that initialize_agent passes the shared debug UI into agent creation."""
+        mock_config_manager = Mock()
+        mock_config_manager.is_configured.return_value = True
+        mock_config_manager.get_keycloak_config.return_value = Mock()
+        mock_config_manager.get_gcm_config.return_value = Mock()
+        mock_config_manager.get_auth_config.return_value = Mock()
+        mock_agent_config = Mock()
+        mock_llm_config = Mock(provider="watsonx")
+        mock_config_manager.get_agent_config.return_value = mock_agent_config
+        mock_config_manager.get_llm_config.return_value = mock_llm_config
+        mock_config_manager.get_password.return_value = "password"
+        mock_config_manager.get_client_secret.return_value = "secret"
+        mock_config_manager.get_watsonx_config.return_value = Mock()
+        mock_config_manager.get_watsonx_api_key.return_value = "test-api-key"
+
+        mock_agent = Mock()
+        mock_agent.mcp_client = Mock()
+        mock_agent.tool_loader = Mock()
+
+        mock_debug_ui = Mock()
+
+        with patch("gcm_agent.ui.chat_ui.get_config_manager", return_value=mock_config_manager), \
+             patch("gcm_agent.ui.chat_ui.get_debug_ui_instance", return_value=mock_debug_ui), \
+             patch("gcm_agent.ui.chat_ui.create_gcm_agent", new=AsyncMock(return_value=mock_agent)), \
+             patch("gcm_agent.ui.chat_ui._agent_state", new=AgentState()):
+
+            result = await initialize_agent()
+
+            assert "initialized successfully" in result.lower()
+            gcm_agent.ui.chat_ui.create_gcm_agent.assert_awaited_once()
 
 
 class TestAgentState:
