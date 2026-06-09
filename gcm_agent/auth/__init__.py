@@ -148,7 +148,7 @@ async def authenticate_gcm(
             hostname=gcm_config.hostname,
             verify_ssl=gcm_config.verify_ssl,
         )
-        await gcm_auth.authorize(access_token, auth_config.username)
+        await gcm_auth.authorize(access_token)
         logger.info("Step 2 complete: GCM authorization successful")
         
         # Store token info for expiration tracking and refresh
@@ -231,7 +231,7 @@ async def get_client_factory(
         hostname=gcm_config.hostname,
         verify_ssl=gcm_config.verify_ssl,
     )
-    await gcm_auth.authorize(access_token, auth_config.username)
+    await gcm_auth.authorize(access_token)
     logger.info("Step 2 complete: GCM authorization successful")
     
     # Store token info for expiration tracking and refresh
