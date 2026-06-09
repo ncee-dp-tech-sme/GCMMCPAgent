@@ -1,5 +1,32 @@
 # Changelog
 
+## 2026-06-09 - Bug Fix: Query Independence - Context Bleeding Prevention
+
+### Fixed
+- **Context Bleeding from Failed Queries** (22:45 UTC)
+  - **Problem**: Agent incorrectly carried over filters from previous queries (especially failed queries) to new queries
+  - **Root Cause**: LLM treated filters from conversation history as persistent state, even when new query explicitly requested "all" items
+  - **Example**: 
+    1. User: "list all details of the asset with hostname kushaq.dev.fyre.ibm.com" → 500 error
+    2. User: "list all assets" → Showed only assets filtered by kushaq.dev.fyre.ibm.com (WRONG)
+    3. Expected: Show ALL assets without any filter
+  - **Solution**: Enhanced system prompt with explicit query independence instructions:
+    - Added Core Instruction #6: "CRITICAL: Each query is independent - do NOT carry over filters from previous queries unless explicitly requested"
+    - Added "QUERY INDEPENDENCE" section with clear guidelines:
+      - Each user query is a NEW request
+      - "list all assets" means ALL assets, not filtered by previous context
+      - "show all keys" means ALL keys, not filtered by previous hostname/criteria
+      - Only apply filters when explicitly stated in the CURRENT query
+  - **Impact**:
+    - ✅ Agent no longer carries over filters from previous queries
+    - ✅ "All" queries return unfiltered results
+    - ✅ Legitimate follow-up questions still work correctly
+    - ✅ Clear distinction between filtered and unfiltered queries
+  - **Note**: The original 500 error when filtering by hostname is a **server-side issue** with the GCM MCP server's API endpoint and requires server-side investigation. This fix addresses the context bleeding behavior, not the underlying server error.
+  - **Files Modified**:
+    - `gcm_agent/agent/prompts.py` (lines 11-30) - Added query independence instructions
+    - `docs/QUERY_INDEPENDENCE_FIX.md` - Full documentation
+
 ## 2026-06-09 - Bug Fix: Table Formatter Multi-Table Detection
 
 ### Fixed
