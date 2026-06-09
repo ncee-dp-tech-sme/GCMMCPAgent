@@ -6,8 +6,10 @@
 # 2026-06-08 21:45 UTC - Added structured logging for observability (Phase 4)
 # 2026-06-08 21:56 UTC - Fixed import: use inspect.iscoroutinefunction instead of functools
 # 2026-06-08 22:08 UTC - Integrated ObservabilityLogger with debug UI
+# 2026-06-09 21:05 UTC - Refactored logger caching, handler setup, and performance timing
 
 import logging
+import logging.handlers
 import sys
 import os
 import json
@@ -15,7 +17,7 @@ import time
 import functools
 import inspect
 from pathlib import Path
-from typing import Optional, Dict, Any, Callable, TYPE_CHECKING
+from typing import Optional, Dict, Any, Callable, TYPE_CHECKING, List
 from datetime import datetime, timezone
 import uuid
 
@@ -31,6 +33,34 @@ class StructuredLogger:
 
     _loggers = {}  # Cache for logger instances
 
+    @staticmethod
+    def _create_formatter() -> logging.Formatter:
+        """Create standard formatter for handlers."""
+        return logging.Formatter(
+            fmt="%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+    @staticmethod
+    def _add_handler(
+        logger: logging.Logger,
+        handler: logging.Handler,
+        level: int,
+        formatter: logging.Formatter,
+    ) -> None:
+        """
+        Configure and add a handler to a logger.
+        
+        Args:
+            logger: Logger instance
+            handler: Handler to add
+            level: Logging level for handler
+            formatter: Formatter for handler
+        """
+        handler.setLevel(level)
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
     @classmethod
     def get_logger(
         cls,
@@ -38,54 +68,62 @@ class StructuredLogger:
         level: int = logging.INFO,
         log_file: Optional[str] = None,
         console: bool = True,
+        max_bytes: int = 10 * 1024 * 1024,  # 10MB default
+        backup_count: int = 5,
     ) -> logging.Logger:
         """
         Get or create a logger instance with specified configuration.
+        Uses caching to avoid reconfiguring existing loggers.
 
         Args:
             name: Logger name (typically module name)
             level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
             log_file: Optional file path for file logging
             console: Enable console logging (default: True)
+            max_bytes: Maximum log file size before rotation (default: 10MB)
+            backup_count: Number of backup files to keep (default: 5)
 
         Returns:
             Configured logger instance
         """
-        # Return cached logger if exists
+        # Return cached logger if exists and already has handlers
         if name in cls._loggers:
-            return cls._loggers[name]
+            logger = cls._loggers[name]
+            if logger.handlers:
+                return logger
 
-        # Create new logger
+        # Create new logger or get existing one
         logger = logging.getLogger(name)
         logger.setLevel(level)
         logger.propagate = False  # Prevent duplicate logs
 
-        # Clear existing handlers
-        logger.handlers.clear()
+        # Skip reconfiguration if logger already has handlers
+        if logger.handlers:
+            cls._loggers[name] = logger
+            return logger
 
-        # Create formatter with structured format
-        formatter = logging.Formatter(
-            fmt="%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
-            datefmt="%Y-%m-%d %H:%M:%S",
-        )
+        # Create formatter
+        formatter = cls._create_formatter()
 
         # Add console handler if enabled
         if console:
             console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setLevel(level)
-            console_handler.setFormatter(formatter)
-            logger.addHandler(console_handler)
+            cls._add_handler(logger, console_handler, level, formatter)
 
-        # Add file handler if log_file specified
+        # Add rotating file handler if log_file specified
         if log_file:
             # Ensure log directory exists
             log_path = Path(log_file)
             log_path.parent.mkdir(parents=True, exist_ok=True)
 
-            file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
-            file_handler.setLevel(level)
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file,
+                mode="a",
+                maxBytes=max_bytes,
+                backupCount=backup_count,
+                encoding="utf-8",
+            )
+            cls._add_handler(logger, file_handler, level, formatter)
 
         # Cache logger
         cls._loggers[name] = logger
@@ -108,14 +146,23 @@ class StructuredLogger:
                 handler.setLevel(level)
 
     @classmethod
-    def add_file_handler(cls, name: str, log_file: str, level: Optional[int] = None) -> None:
+    def add_file_handler(
+        cls,
+        name: str,
+        log_file: str,
+        level: Optional[int] = None,
+        max_bytes: int = 10 * 1024 * 1024,
+        backup_count: int = 5,
+    ) -> None:
         """
-        Add file handler to an existing logger.
+        Add rotating file handler to an existing logger.
 
         Args:
             name: Logger name
             log_file: File path for logging
             level: Optional logging level (uses logger's level if not specified)
+            max_bytes: Maximum log file size before rotation (default: 10MB)
+            backup_count: Number of backup files to keep (default: 5)
         """
         if name not in cls._loggers:
             raise ValueError(f"Logger '{name}' not found")
@@ -126,26 +173,27 @@ class StructuredLogger:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-        # Create file handler
-        file_handler = logging.FileHandler(log_file, mode="a", encoding="utf-8")
-        file_handler.setLevel(level if level is not None else logger.level)
+        # Create rotating file handler
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file,
+            mode="a",
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding="utf-8",
+        )
 
-        # Use same formatter as existing handlers
-        if logger.handlers:
-            file_handler.setFormatter(logger.handlers[0].formatter)
-        else:
-            formatter = logging.Formatter(
-                fmt="%(asctime)s | %(name)s | %(levelname)-8s | %(message)s",
-                datefmt="%Y-%m-%d %H:%M:%S",
-            )
-            file_handler.setFormatter(formatter)
+        # Use same formatter as existing handlers or create new one
+        formatter = (
+            logger.handlers[0].formatter if logger.handlers else cls._create_formatter()
+        )
 
-        logger.addHandler(file_handler)
+        # Add handler using helper method
+        cls._add_handler(logger, file_handler, level if level is not None else logger.level, formatter)
 
     @classmethod
     def remove_file_handlers(cls, name: str) -> None:
         """
-        Remove all file handlers from a logger.
+        Remove all file handlers (including rotating file handlers) from a logger.
 
         Args:
             name: Logger name
@@ -154,8 +202,11 @@ class StructuredLogger:
             return
 
         logger = cls._loggers[name]
-        # Remove only file handlers, keep console handlers
-        logger.handlers = [h for h in logger.handlers if not isinstance(h, logging.FileHandler)]
+        # Remove file handlers and rotating file handlers, keep console handlers
+        logger.handlers = [
+            h for h in logger.handlers
+            if not isinstance(h, (logging.FileHandler, logging.handlers.RotatingFileHandler))
+        ]
 
 
 def get_logger(
@@ -467,70 +518,79 @@ class ObservabilityLogger:
         self._send_to_debug_ui("performance", log_data)
 
 
-def timed_operation(operation_name: Optional[str] = None) -> Callable:
+def timed_operation(operation_name: Optional[str] = None, threshold_ms: float = 100.0) -> Callable:
     """
     Decorator to time operations and log performance metrics.
+    Uses time.perf_counter() for higher-resolution timing.
     
     Args:
         operation_name: Name of operation (defaults to function name)
+        threshold_ms: Minimum duration in milliseconds to log (default: 100ms)
     
     Returns:
         Decorated function
     
     Example:
-        @timed_operation("load_tools")
+        @timed_operation("load_tools", threshold_ms=50.0)
         async def load_tools(self):
             # ... operation code ...
             pass
     """
     def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            start_time = time.time()
-            op_name = operation_name or func.__name__
-            
-            try:
-                result = await func(*args, **kwargs)
-                duration_ms = (time.time() - start_time) * 1000
-                
-                # Log if duration exceeds threshold (100ms)
-                if duration_ms > 100:
-                    logger = get_agent_logger()
-                    logger.debug(f"Operation '{op_name}' took {duration_ms:.2f}ms")
-                
-                return result
-            except Exception as e:
-                duration_ms = (time.time() - start_time) * 1000
-                logger = get_agent_logger()
-                logger.warning(f"Operation '{op_name}' failed after {duration_ms:.2f}ms: {e}")
-                raise
+        # Cache logger once per decorator invocation
+        logger = get_agent_logger()
+        op_name = operation_name or func.__name__
         
-        @functools.wraps(func)
-        def sync_wrapper(*args, **kwargs):
-            start_time = time.time()
-            op_name = operation_name or func.__name__
+        def _log_timing_and_execute(is_async: bool):
+            """
+            Helper function to handle timing and logging for both sync and async functions.
             
-            try:
-                result = func(*args, **kwargs)
-                duration_ms = (time.time() - start_time) * 1000
+            Args:
+                is_async: Whether the function is async
+            
+            Returns:
+                Wrapper function
+            """
+            @functools.wraps(func)
+            async def async_impl(*args, **kwargs):
+                start_time = time.perf_counter()
                 
-                # Log if duration exceeds threshold (100ms)
-                if duration_ms > 100:
-                    logger = get_agent_logger()
-                    logger.debug(f"Operation '{op_name}' took {duration_ms:.2f}ms")
+                try:
+                    result = await func(*args, **kwargs)
+                    duration_ms = (time.perf_counter() - start_time) * 1000
+                    
+                    # Log if duration exceeds threshold
+                    if duration_ms > threshold_ms:
+                        logger.debug(f"Operation '{op_name}' took {duration_ms:.2f}ms")
+                    
+                    return result
+                except Exception as e:
+                    duration_ms = (time.perf_counter() - start_time) * 1000
+                    logger.warning(f"Operation '{op_name}' failed after {duration_ms:.2f}ms: {e}")
+                    raise
+            
+            @functools.wraps(func)
+            def sync_impl(*args, **kwargs):
+                start_time = time.perf_counter()
                 
-                return result
-            except Exception as e:
-                duration_ms = (time.time() - start_time) * 1000
-                logger = get_agent_logger()
-                logger.warning(f"Operation '{op_name}' failed after {duration_ms:.2f}ms: {e}")
-                raise
+                try:
+                    result = func(*args, **kwargs)
+                    duration_ms = (time.perf_counter() - start_time) * 1000
+                    
+                    # Log if duration exceeds threshold
+                    if duration_ms > threshold_ms:
+                        logger.debug(f"Operation '{op_name}' took {duration_ms:.2f}ms")
+                    
+                    return result
+                except Exception as e:
+                    duration_ms = (time.perf_counter() - start_time) * 1000
+                    logger.warning(f"Operation '{op_name}' failed after {duration_ms:.2f}ms: {e}")
+                    raise
+            
+            return async_impl if is_async else sync_impl
         
         # Return appropriate wrapper based on function type
-        if inspect.iscoroutinefunction(func):
-            return async_wrapper
-        else:
-            return sync_wrapper
+        return _log_timing_and_execute(inspect.iscoroutinefunction(func))
     
     return decorator
 

@@ -6,6 +6,7 @@
 # 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
 # 2026-06-08 22:09 UTC - Integrated debug UI for real-time observability logs
 # 2026-06-09 20:45 UTC - Refactored for better maintainability: extracted helpers, consolidated error handling, fixed streaming accumulation
+# 2026-06-09 20:57 UTC - Moved late imports to module level for PEP 8 compliance
 
 from typing import List, Tuple, Optional, AsyncGenerator, Dict, Callable, Any
 import json
@@ -13,9 +14,15 @@ from datetime import datetime, timezone
 import gradio as gr
 
 from gcm_agent.agent.gcm_agent import GCMAgent, AgentInitializationError, AgentExecutionError
+from gcm_agent.agent import create_gcm_agent
 from gcm_agent.mcp.client import GCMMCPClient
 from gcm_agent.mcp.tool_loader import GCMToolLoader
-from gcm_agent.config.config_manager import get_config_manager, MissingConfigError
+from gcm_agent.config.config_manager import (
+    get_config_manager,
+    MissingConfigError,
+    LLMProviderConfig,
+    AgentSetupConfig,
+)
 from gcm_agent.utils.logger import get_ui_logger
 from gcm_agent.ui.debug_ui import get_debug_ui_instance
 
@@ -184,9 +191,6 @@ async def initialize_agent() -> str:
             return await _handle_initialization_error(error_msg, _agent_state)
         
         # Create unified LLM provider config
-        from gcm_agent.config.config_manager import LLMProviderConfig, AgentSetupConfig
-        from gcm_agent.agent import create_gcm_agent
-        
         llm_provider_config = LLMProviderConfig(
             provider=llm_config.provider,
             watsonx_config=provider_data.get('config') if llm_config.provider == 'watsonx' else None,

@@ -2,6 +2,7 @@
 
 # Made with Bob
 # 2026-06-08 21:50 UTC - Created debugging dashboard for Phase 4 observability features
+# 2026-06-09 21:03 UTC - Refactored create_ui: extracted _TAB_CONFIGS constant and _build_tab helper to eliminate 84% code duplication (94 lines → 15 lines)
 
 import gradio as gr
 import json
@@ -12,6 +13,15 @@ from pathlib import Path
 
 from gcm_agent.utils.logger import get_agent_logger
 from gcm_agent.mcp.tool_analytics import ToolAnalytics
+
+
+# Tab configuration: (emoji, title, description, fetch_function, output_type, has_filters)
+_TAB_CONFIGS = [
+    ("📋", "Recent Logs", "Recent Agent Logs", "get_recent_logs", "textbox", True),
+    ("🛠️", "Tool Analytics", "Tool Usage Analytics", "get_tool_analytics_summary", "markdown", False),
+    ("💰", "Token Usage", "Token Usage Statistics", "get_token_statistics", "markdown", False),
+    ("⚡", "Performance", "Performance Metrics", "get_performance_statistics", "markdown", False),
+]
 
 
 class DebugUI:
@@ -185,6 +195,71 @@ class DebugUI:
         
         return "\n".join(lines)
     
+    def _build_tab(
+        self,
+        emoji: str,
+        title: str,
+        description: str,
+        fetch_fn_name: str,
+        output_type: str,
+        has_filters: bool = False
+    ) -> None:
+        """
+        Build a single debug tab with refresh functionality.
+        
+        Args:
+            emoji: Tab emoji icon
+            title: Tab title
+            description: Tab description text
+            fetch_fn_name: Name of method to fetch data
+            output_type: Type of output component ("textbox" or "markdown")
+            has_filters: Whether tab has filter controls (logs only)
+        """
+        with gr.Tab(f"{emoji} {title}"):
+            gr.Markdown(f"### {description}")
+            
+            # Special handling for logs tab filters
+            if has_filters:
+                with gr.Row():
+                    log_type_filter = gr.Dropdown(
+                        choices=["all", "tool_selection", "tool_execution", "token_usage", "performance"],
+                        value="all",
+                        label="Filter by Type"
+                    )
+                    log_limit = gr.Slider(
+                        minimum=10,
+                        maximum=100,
+                        value=50,
+                        step=10,
+                        label="Number of Logs"
+                    )
+                    refresh_btn = gr.Button("🔄 Refresh", variant="primary")
+            else:
+                refresh_btn = gr.Button("🔄 Refresh", variant="primary")
+            
+            # Create output component
+            fetch_fn = getattr(self, fetch_fn_name)
+            if output_type == "textbox":
+                output = gr.Textbox(
+                    label="Logs",
+                    lines=20,
+                    max_lines=30,
+                    value=fetch_fn(),
+                    interactive=False
+                )
+            else:
+                output = gr.Markdown(value=fetch_fn())
+            
+            # Wire up refresh button
+            if has_filters:
+                refresh_btn.click(
+                    fn=fetch_fn,
+                    inputs=[log_type_filter, log_limit],
+                    outputs=output
+                )
+            else:
+                refresh_btn.click(fn=fetch_fn, outputs=output)
+    
     def create_ui(self) -> gr.Blocks:
         """
         Create Gradio debug UI.
@@ -197,83 +272,8 @@ class DebugUI:
             gr.Markdown("Monitor agent observability metrics, logs, and analytics")
             
             with gr.Tabs():
-                # Tab 1: Recent Logs
-                with gr.Tab("📋 Recent Logs"):
-                    gr.Markdown("### Recent Agent Logs")
-                    
-                    with gr.Row():
-                        log_type_filter = gr.Dropdown(
-                            choices=["all", "tool_selection", "tool_execution", "token_usage", "performance"],
-                            value="all",
-                            label="Filter by Type"
-                        )
-                        log_limit = gr.Slider(
-                            minimum=10,
-                            maximum=100,
-                            value=50,
-                            step=10,
-                            label="Number of Logs"
-                        )
-                        refresh_logs_btn = gr.Button("🔄 Refresh", variant="primary")
-                    
-                    logs_output = gr.Textbox(
-                        label="Logs",
-                        lines=20,
-                        max_lines=30,
-                        value=self.get_recent_logs(),
-                        interactive=False
-                    )
-                    
-                    refresh_logs_btn.click(
-                        fn=self.get_recent_logs,
-                        inputs=[log_type_filter, log_limit],
-                        outputs=logs_output
-                    )
-                
-                # Tab 2: Tool Analytics
-                with gr.Tab("🛠️ Tool Analytics"):
-                    gr.Markdown("### Tool Usage Analytics")
-                    
-                    refresh_analytics_btn = gr.Button("🔄 Refresh", variant="primary")
-                    
-                    analytics_output = gr.Markdown(
-                        value=self.get_tool_analytics_summary()
-                    )
-                    
-                    refresh_analytics_btn.click(
-                        fn=self.get_tool_analytics_summary,
-                        outputs=analytics_output
-                    )
-                
-                # Tab 3: Token Statistics
-                with gr.Tab("💰 Token Usage"):
-                    gr.Markdown("### Token Usage Statistics")
-                    
-                    refresh_tokens_btn = gr.Button("🔄 Refresh", variant="primary")
-                    
-                    tokens_output = gr.Markdown(
-                        value=self.get_token_statistics()
-                    )
-                    
-                    refresh_tokens_btn.click(
-                        fn=self.get_token_statistics,
-                        outputs=tokens_output
-                    )
-                
-                # Tab 4: Performance Metrics
-                with gr.Tab("⚡ Performance"):
-                    gr.Markdown("### Performance Metrics")
-                    
-                    refresh_perf_btn = gr.Button("🔄 Refresh", variant="primary")
-                    
-                    perf_output = gr.Markdown(
-                        value=self.get_performance_statistics()
-                    )
-                    
-                    refresh_perf_btn.click(
-                        fn=self.get_performance_statistics,
-                        outputs=perf_output
-                    )
+                for emoji, title, desc, fetch_fn, output_type, has_filters in _TAB_CONFIGS:
+                    self._build_tab(emoji, title, desc, fetch_fn, output_type, has_filters)
             
             gr.Markdown("---")
             gr.Markdown("*Debug dashboard updates when you click refresh buttons*")
