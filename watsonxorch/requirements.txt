@@ -1,0 +1,33 @@
+# WatsonX Orchestrate Integration Requirements
+# Made with Bob
+# 2026-06-10 02:54 UTC - Package-specific dependencies
+
+# Core dependencies (from parent project)
+langchain>=0.1.0
+langchain-core
+langgraph>=0.0.40
+langchain-ibm>=0.1.0
+langchain-openai>=0.1.0
+langchain-mcp-adapters>=0.1.0
+
+# HTTP and networking
+httpx>=0.25.0
+
+# Configuration and settings
+pydantic>=2.0.0
+pydantic-settings
+python-dotenv>=1.0.0
+
+# FastAPI and web server
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# Security
+cryptography>=41.0.0
+
+# Retry logic
+tenacity>=8.2.0
+
+# Testing (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.21.0

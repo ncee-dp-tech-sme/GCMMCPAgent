@@ -1,0 +1,172 @@
+# Kubernetes deployment manifests for WatsonX Orchestrate API
+# Made with Bob
+# 2026-06-10 02:49 UTC - Initial Kubernetes deployment configuration
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcm-agent-orchestrate-config
+  namespace: default
+data:
+  ORCHESTRATE_HOST: "0.0.0.0"
+  ORCHESTRATE_PORT: "8000"
+  ORCHESTRATE_CORS_ENABLED: "true"
+  ORCHESTRATE_CORS_ORIGINS: "*"
+  ORCHESTRATE_SESSION_TIMEOUT: "3600"
+  ORCHESTRATE_MAX_SESSIONS: "100"
+  ORCHESTRATE_MAX_WORKERS: "4"
+  ORCHESTRATE_REQUEST_TIMEOUT: "300"
+  ORCHESTRATE_LOG_LEVEL: "INFO"
+  ORCHESTRATE_LOG_FORMAT: "json"
+  
+  # GCM Configuration
+  GCM_URL: "https://gcm.example.com:9443"
+  GCM_HOSTNAME: "gcm.example.com"
+  KEYCLOAK_PORT: "443"
+  REALM: "master"
+  
+  # LLM Configuration
+  LLM_PROVIDER: "watsonx"
+  WATSONX_MODEL: "ibm/granite-13b-chat-v2"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gcm-agent-orchestrate-secrets
+  namespace: default
+type: Opaque
+stringData:
+  USERNAME: "admin"
+  PASSWORD: "your_password"
+  CLIENT_ID: "your_client_id"
+  CLIENT_SECRET: "your_client_secret"
+  LLM_WATSONX_API_KEY: "your_watsonx_api_key"
+  LLM_WATSONX_PROJECT_ID: "your_project_id"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gcm-agent-orchestrate
+  namespace: default
+  labels:
+    app: gcm-agent-orchestrate
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: gcm-agent-orchestrate
+  template:
+    metadata:
+      labels:
+        app: gcm-agent-orchestrate
+    spec:
+      containers:
+      - name: api
+        image: gcm-agent-orchestrate:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: gcm-agent-orchestrate-config
+        - secretRef:
+            name: gcm-agent-orchestrate-secrets
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gcm-agent-orchestrate
+  namespace: default
+  labels:
+    app: gcm-agent-orchestrate
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: http
+  selector:
+    app: gcm-agent-orchestrate
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gcm-agent-orchestrate
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+  - hosts:
+    - gcm-agent-api.example.com
+    secretName: gcm-agent-orchestrate-tls
+  rules:
+  - host: gcm-agent-api.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gcm-agent-orchestrate
+            port:
+              number: 8000
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gcm-agent-orchestrate
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gcm-agent-orchestrate
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80

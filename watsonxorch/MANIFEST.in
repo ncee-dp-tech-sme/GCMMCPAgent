@@ -1,0 +1,22 @@
+# Manifest file for package distribution
+# Made with Bob
+# 2026-06-10 02:54 UTC - Package manifest
+
+include README.md
+include LICENSE
+include requirements.txt
+include agent.yaml
+include .env.example
+include *.py
+
+# Include all YAML files
+recursive-include watsonxorch *.yaml
+recursive-include watsonxorch *.yml
+
+# Include documentation
+recursive-include watsonxorch *.md
+
+# Exclude test files and cache
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude .DS_Store
