@@ -1,16 +1,17 @@
 # WatsonX Orchestrate Agent Configuration - Minimal Required Fields
 # Made with Bob
 # 2026-06-10 03:09 UTC - Simplified to minimal required fields only
+# 2026-06-10 03:27 UTC - Fixed: moved entrypoint inside deployment.code_bundle
 
 spec_version: v1
 kind: agent
 name: gcm-agent
 description: Intelligent agent for managing IBM Guardium Cryptography Manager (GCM) operations. Provides natural language interface to GCM APIs for key management, asset inventory, policy compliance, and security operations.
-entrypoint: watsonxorch.adapter:create_graph
 
 deployment:
   code_bundle:
     type: python
     runtime: python3.11
     entry_point: watsonxorch.api:app
+    entrypoint: watsonxorch.adapter:create_graph
     requirements_file: requirements.txt
