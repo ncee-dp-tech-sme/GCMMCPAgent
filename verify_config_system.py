@@ -163,7 +163,7 @@ def test_config_manager():
         print(f"✓ Retrieved auth config: {retrieved_auth.username}")
         
         password = config_manager.get_password()
-        if password == "test_password":
+        if password == "test_password":  # HashiCorpIgnore
             print("✓ Retrieved password correctly")
         else:
             print(f"✗ Password mismatch: {password}")

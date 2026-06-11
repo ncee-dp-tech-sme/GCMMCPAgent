@@ -96,7 +96,7 @@ class TestGCMAgent:
         llm_config = LLMProviderConfig(
             provider='watsonx',
             watsonx_config=watsonx_config,
-            watsonx_api_key='test_api_key'
+            watsonx_api_key='test_api_key'  # HashiCorpIgnore
         )
         
         agent = GCMAgent(
@@ -291,8 +291,8 @@ class TestCreateGCMAgent:
             auth_config=auth_config,
             llm_config=llm_config,
             agent_config=agent_config,
-            password="test_password",
-            client_secret="test_secret"
+            password="test_password",  # HashiCorpIgnore
+            client_secret="test_secret"  # HashiCorpIgnore
         )
         
         # Create agent
@@ -341,7 +341,7 @@ class TestCreateGCMAgent:
         llm_config = LLMProviderConfig(
             provider='watsonx',
             watsonx_config=watsonx_config,
-            watsonx_api_key='test_api_key'
+            watsonx_api_key='test_api_key'  # HashiCorpIgnore
         )
         
         setup_config = AgentSetupConfig(
@@ -388,7 +388,7 @@ class TestCreateGCMAgent:
         llm_config = LLMProviderConfig(
             provider='watsonx',
             watsonx_config=watsonx_config,
-            watsonx_api_key='test_api_key'
+            watsonx_api_key='test_api_key'  # HashiCorpIgnore
         )
         
         # Test empty password validation
@@ -399,8 +399,8 @@ class TestCreateGCMAgent:
                 auth_config=auth_config,
                 llm_config=llm_config,
                 agent_config=agent_config,
-                password="",
-                client_secret="test_secret"
+                password="",  # HashiCorpIgnore
+                client_secret="test_secret"  # HashiCorpIgnore
             )
         
         # Test empty client_secret validation
@@ -411,8 +411,8 @@ class TestCreateGCMAgent:
                 auth_config=auth_config,
                 llm_config=llm_config,
                 agent_config=agent_config,
-                password="test_password",
-                client_secret=""
+                password="test_password",  # HashiCorpIgnore
+                client_secret=""  # HashiCorpIgnore
             )
 
 
@@ -449,7 +449,7 @@ class TestSystemPrompt:
         llm_config = LLMProviderConfig(
             provider='watsonx',
             watsonx_config=watsonx_config,
-            watsonx_api_key='test_api_key'
+            watsonx_api_key='test_api_key'  # HashiCorpIgnore
         )
         
         agent = GCMAgent(
