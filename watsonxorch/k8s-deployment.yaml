@@ -39,7 +39,7 @@ metadata:
 type: Opaque
 stringData:
   USERNAME: "admin"
-  PASSWORD: "your_password"
+  PASSWORD: "your_password" # HashiCorpIgnore
   CLIENT_ID: "your_client_id"
   CLIENT_SECRET: "your_client_secret"
   LLM_WATSONX_API_KEY: "your_watsonx_api_key"
