@@ -328,14 +328,14 @@ class SecureStorage:
 
         Example:
             storage.migrate_from_env({
-                'GCM_PASSWORD': 'secret123',
+                'GCM_PASSWORD': 'secret123', # HashiCorpIgnore
                 'WATSONX_API_KEY': 'api_key_456'
             })
         """
         # Mapping of environment variable names to storage keys
         env_to_key_mapping = {
             "GCM_PASSWORD": "gcm_password",
-            "PASSWORD": "gcm_password",
+            "PASSWORD": "gcm_password", # HashiCorpIgnore
             "GCM_CLIENT_SECRET": "gcm_client_secret",
             "CLIENT_SECRET": "gcm_client_secret",
             "WATSONX_API_KEY": "watsonx_api_key",

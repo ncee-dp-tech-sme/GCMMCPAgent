@@ -141,14 +141,14 @@ def test_config_manager():
         
         config_manager.update_auth_config(
             auth_config,
-            password="test_password",
-            client_secret="test_secret",
+            password="test_password",  # HashiCorpIgnore
+            client_secret="test_secret",  # HashiCorpIgnore
         )
         print("✓ Stored auth configuration with credentials")
         
         config_manager.update_watsonx_config(
             watsonx_config,
-            api_key="test_api_key",
+            api_key="test_api_key",  # HashiCorpIgnore
         )
         print("✓ Stored WatsonX configuration with API key")
         

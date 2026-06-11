@@ -30,8 +30,8 @@ class TestKeycloakAuthenticator:
             realm='master',
             client_id='test_client',
             username='testuser',
-            password='testpass',
-            client_secret='test_secret'
+            password='testpass',  # HashiCorpIgnore
+            client_secret='test_secret'  # HashiCorpIgnore
         )
         
         token = await auth.get_token()
@@ -56,8 +56,8 @@ class TestKeycloakAuthenticator:
             realm='master',
             client_id='test_client',
             username='testuser',
-            password='testpass',
-            client_secret='test_secret'
+            password='testpass',  # HashiCorpIgnore
+            client_secret='test_secret'  # HashiCorpIgnore
         )
         
         with pytest.raises(Exception):

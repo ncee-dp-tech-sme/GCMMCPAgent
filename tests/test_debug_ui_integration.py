@@ -48,10 +48,10 @@ def mock_setup_config():
                 model="test-model",
                 verify_ssl=False,
             ),
-            watsonx_api_key="test-api-key",
+            watsonx_api_key="test-api-key",  # HashiCorpIgnore
         ),
-        password="test-password", # HashiCorpIgnore
-        client_secret="test-secret",
+        password="test-password",  # HashiCorpIgnore
+        client_secret="test-secret",  # HashiCorpIgnore
     )
 
 

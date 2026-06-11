@@ -63,7 +63,7 @@ async def test_ssl_bypass():
     
     # Create factory
     factory = auth._client_factory(
-        access_token="test_token_12345",
+        access_token="test_token_12345",  # HashiCorpIgnore
         gcm_hostname="gcm.example.com"
     )
     
@@ -83,7 +83,7 @@ async def test_ssl_bypass():
     )
     
     factory_secure = auth_secure._client_factory(
-        access_token="test_token_12345",
+        access_token="test_token_12345",  # HashiCorpIgnore
         gcm_hostname="gcm.example.com"
     )
     

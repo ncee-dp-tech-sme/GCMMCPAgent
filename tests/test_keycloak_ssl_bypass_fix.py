@@ -64,8 +64,8 @@ async def test_keycloak_ssl_bypass():
             realm="master",
             client_id="test-client",
             username="testuser",
-            password="testpass",
-            client_secret="test-secret",
+            password="testpass",  # HashiCorpIgnore
+            client_secret="test-secret",  # HashiCorpIgnore
             verify_ssl=False  # Should NOT pass verify parameter
         )
         
@@ -127,8 +127,8 @@ async def test_keycloak_ssl_bypass():
             realm="master",
             client_id="test-client",
             username="testuser",
-            password="testpass",
-            client_secret="test-secret",
+            password="testpass",  # HashiCorpIgnore
+            client_secret="test-secret",  # HashiCorpIgnore
             verify_ssl=True  # Should pass verify=True
         )
         

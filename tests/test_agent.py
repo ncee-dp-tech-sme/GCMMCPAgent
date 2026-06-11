@@ -147,7 +147,7 @@ class TestGCMAgent:
         llm_config = LLMProviderConfig(
             provider='watsonx',
             watsonx_config=watsonx_config,
-            watsonx_api_key='test_api_key'
+            watsonx_api_key='test_api_key'  # HashiCorpIgnore
         )
         
         agent = GCMAgent(
@@ -202,7 +202,7 @@ class TestGCMAgent:
         llm_config = LLMProviderConfig(
             provider='watsonx',
             watsonx_config=watsonx_config,
-            watsonx_api_key='test_api_key'
+            watsonx_api_key='test_api_key'  # HashiCorpIgnore
         )
         
         agent = GCMAgent(
@@ -281,7 +281,7 @@ class TestCreateGCMAgent:
         llm_config = LLMProviderConfig(
             provider='watsonx',
             watsonx_config=watsonx_config,
-            watsonx_api_key='test_api_key'
+            watsonx_api_key='test_api_key'  # HashiCorpIgnore
         )
         
         # Create consolidated setup config
