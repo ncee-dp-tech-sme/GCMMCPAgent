@@ -350,8 +350,8 @@ class TestCreateGCMAgent:
             auth_config=auth_config,
             llm_config=llm_config,
             agent_config=agent_config,
-            password="test_password",
-            client_secret="test_secret"
+            password="test_password",  # HashiCorpIgnore
+            client_secret="test_secret"  # HashiCorpIgnore
         )
         
         # Verify exception is raised and converted to AgentInitializationError

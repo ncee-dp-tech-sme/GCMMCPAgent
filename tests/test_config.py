@@ -187,9 +187,9 @@ class TestSecureStorage:
         storage = SecureStorage(storage_dir=temp_storage_dir)
         
         env_vars = {
-            'GCM_PASSWORD': 'secret123',
-            'WATSONX_API_KEY': 'api_key_456',
-            'GCM_CLIENT_SECRET': 'client_secret_789'
+            'GCM_PASSWORD': 'secret123',  # HashiCorpIgnore
+            'WATSONX_API_KEY': 'api_key_456',  # HashiCorpIgnore
+            'GCM_CLIENT_SECRET': 'client_secret_789'  # HashiCorpIgnore
         }
         
         count = storage.migrate_from_env(env_vars)
