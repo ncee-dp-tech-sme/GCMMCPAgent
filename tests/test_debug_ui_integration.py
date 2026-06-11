@@ -50,7 +50,7 @@ def mock_setup_config():
             ),
             watsonx_api_key="test-api-key",
         ),
-        password="test-password",
+        password="test-password", # HashiCorpIgnore
         client_secret="test-secret",
     )
 
