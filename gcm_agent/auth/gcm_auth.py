@@ -1,6 +1,7 @@
 """GCM authorization module for completing the second authentication step against user management endpoints."""
 
 # Made with Bob
+# 2026-07-17 00:36 UTC - Added token_type and filtered_tags parameters to _build_auth_headers() and _client_factory()
 # 2026-06-09 20:20 UTC - REFACTORING: Extracted helper functions to module level, simplified error handling, reduced nested complexity
 # 2026-06-06 07:17 UTC - CRITICAL FIX: Changed all httpx.AsyncClient creation to NOT pass verify parameter when verify_ssl=False, allowing module-level SSL bypass patch to apply
 # 2026-06-06 06:00 UTC - Added comprehensive header logging with token masking for debugging Authorization Bearer token
@@ -56,14 +57,22 @@ def _mask_auth_headers(headers: Dict[str, str]) -> Dict[str, str]:
     return masked
 
 
-def _build_auth_headers(access_token: str, gcm_hostname: Optional[str] = None, existing_headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+def _build_auth_headers(
+    access_token: str,
+    gcm_hostname: Optional[str] = None,
+    existing_headers: Optional[Dict[str, str]] = None,
+    token_type: str = "bearer",
+    filtered_tags: str = "",
+) -> Dict[str, str]:
     """
     Build authentication headers with optional GCM hostname and existing headers.
     
     Args:
-        access_token: OAuth2 access token
+        access_token: OAuth2 access token or raw API key
         gcm_hostname: Optional GCM hostname for x-gcm-hostname header
         existing_headers: Optional existing headers to merge
+        token_type: "bearer" (default) or "api_key" — adds token_type header when api_key
+        filtered_tags: Comma-separated tag filter for X-MCP-Filtered-Tags header
         
     Returns:
         Merged headers dictionary with authentication
@@ -74,8 +83,14 @@ def _build_auth_headers(access_token: str, gcm_hostname: Optional[str] = None, e
         "Content-Type": "application/json",
     }
     
+    if token_type == "api_key":
+        headers["token_type"] = "api_key"
+    
     if gcm_hostname:
         headers["x-gcm-hostname"] = gcm_hostname
+    
+    if filtered_tags:
+        headers["X-MCP-Filtered-Tags"] = filtered_tags
     
     return headers
 
@@ -320,6 +335,8 @@ class GCMAuthenticator:
         access_token: str,
         timeout: Optional[float] = 300.0,
         gcm_hostname: Optional[str] = None,
+        token_type: str = "bearer",
+        filtered_tags: str = "",
     ) -> Callable[[], httpx.AsyncClient]:
         """
         Create factory function that returns authenticated httpx.AsyncClient.
@@ -333,9 +350,11 @@ class GCMAuthenticator:
         the current token from the authenticator instance.
 
         Args:
-            access_token: OAuth2 access token from Keycloak (initial token)
+            access_token: OAuth2 access token from Keycloak or raw API key (initial token)
             timeout: Request timeout in seconds (default: 300)
             gcm_hostname: GCM hostname for x-gcm-hostname header (required for internal API calls)
+            token_type: "bearer" or "api_key" — controls additional token_type header
+            filtered_tags: Comma-separated tag filter forwarded as X-MCP-Filtered-Tags
 
         Returns:
             Factory function that creates authenticated AsyncClient
@@ -381,8 +400,12 @@ class GCMAuthenticator:
             # Filter out conflicting kwargs using helper function
             filtered_kwargs = _filter_client_kwargs(kwargs)
             
-            # Build authentication headers with GCM hostname
-            merged_headers = _build_auth_headers(current_token, gcm_hostname, existing_headers)
+            # Build authentication headers with GCM hostname, token_type and filtered_tags
+            merged_headers = _build_auth_headers(
+                current_token, gcm_hostname, existing_headers,
+                token_type=token_type,
+                filtered_tags=filtered_tags,
+            )
             
             # Log headers with token masked
             masked_headers = _mask_auth_headers(merged_headers)

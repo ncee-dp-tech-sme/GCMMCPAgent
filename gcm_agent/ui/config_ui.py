@@ -1,6 +1,8 @@
 """Gradio-based configuration UI module for collecting and validating GCM agent settings."""
 
 # Made with Bob
+# 2026-07-17 01:15 UTC - Fixed api_key mode: save_configuration no longer requires Keycloak/username/client_id; test_connection handles api_key mode
+# 2026-07-17 00:36 UTC - Added auth_mode radio, gcm_api_key field (api_key mode), filtered_tags field (GCM Server tab)
 # 2026-06-08 20:48 UTC - Phase 2: Added configurable LLM parameters (temperature, max_tokens, top_p, top_k, decoding_method) to UI
 # 2026-06-05 22:14 UTC - Initial implementation of configuration UI with secure credential handling
 # 2026-06-05 21:03 UTC - Split Keycloak and GCM server configuration into separate tabs
@@ -20,6 +22,7 @@ from gcm_agent.config.config_manager import (
     ConfigurationError,
     InvalidConfigError,
     MissingConfigError,
+    LLMConfig,
 )
 from gcm_agent.config.storage import StorageError
 from gcm_agent.auth.keycloak_auth import KeycloakAuthenticator
@@ -29,12 +32,16 @@ from gcm_agent.utils.logger import get_ui_logger
 logger = get_ui_logger()
 
 
-def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str, str, str, str, str, str, str, bool, float, int, float, int, str, bool, int, int, str]:
+# Default load tuple (28 values: added auth_mode + gcm_api_key + filtered_tags)
+_LOAD_DEFAULTS = ("", 443, "master", True, "", "", True, "", "oauth2", "", "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 0.1, 4096, 0.95, 40, "greedy", False, 30, 300, "No configuration found. Please enter your settings.")
+
+
+def load_configuration():
     """
     Load existing configuration from secure storage.
     
     Returns:
-        Tuple of all configuration values for UI fields (including new LLM parameters)
+        Tuple of all configuration values for UI fields
     """
     try:
         config_manager = get_config_manager()
@@ -42,7 +49,7 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
         # Try to load configuration
         if not config_manager.load_config():
             logger.info("No existing configuration found")
-            return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 0.1, 4096, 0.95, 40, "greedy", False, 30, 300, "No configuration found. Please enter your settings.")
+            return _LOAD_DEFAULTS
         
         # Load each section
         keycloak_config = config_manager.get_keycloak_config()
@@ -51,10 +58,11 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
         watsonx_config = config_manager.get_watsonx_config()
         agent_config = config_manager.get_agent_config()
         
-        # Get sensitive credentials (will be empty strings if not found)
+        # Get sensitive credentials
         password = config_manager.get_password() or ""
         client_secret = config_manager.get_client_secret() or ""
-        api_key = config_manager.get_watsonx_api_key() or ""
+        gcm_api_key = config_manager.get_gcm_api_key() or ""
+        watsonx_api_key = config_manager.get_watsonx_api_key() or ""
         
         logger.info("Configuration loaded successfully")
         
@@ -66,13 +74,16 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
             gcm_config.url,
             gcm_config.hostname,
             gcm_config.verify_ssl,
+            gcm_config.filtered_tags,
+            auth_config.auth_mode,
             auth_config.username,
             password,
             auth_config.client_id,
             client_secret,
+            gcm_api_key,
             watsonx_config.url,
             watsonx_config.project_id,
-            api_key,
+            watsonx_api_key,
             watsonx_config.model,
             watsonx_config.verify_ssl,
             watsonx_config.temperature,
@@ -88,10 +99,10 @@ def load_configuration() -> Tuple[str, int, str, bool, str, str, bool, str, str,
         
     except (MissingConfigError, InvalidConfigError) as e:
         logger.warning(f"Configuration incomplete or invalid: {e}")
-        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 0.1, 4096, 0.95, 40, "greedy", False, 30, 300, f"⚠️ Configuration incomplete: {str(e)}")
+        return (*_LOAD_DEFAULTS[:-1], f"⚠️ Configuration incomplete: {str(e)}")
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
-        return ("", 443, "master", True, "", "", True, "", "", "", "", "https://us-south.ml.cloud.ibm.com", "", "", "ibm/granite-13b-chat-v2", True, 0.1, 4096, 0.95, 40, "greedy", False, 30, 300, f"❌ Error loading configuration: {str(e)}")
+        return (*_LOAD_DEFAULTS[:-1], f"❌ Error loading configuration: {str(e)}")
 
 
 def save_configuration(
@@ -102,13 +113,16 @@ def save_configuration(
     gcm_url: str,
     gcm_hostname: str,
     gcm_verify_ssl: bool,
+    filtered_tags: str,
+    auth_mode: str,
     username: str,
     password: str,
     client_id: str,
     client_secret: str,
+    gcm_api_key: str,
     watsonx_url: str,
     project_id: str,
-    api_key: str,
+    watsonx_api_key: str,
     model: str,
     watsonx_verify_ssl: bool,
     temperature: float,
@@ -132,13 +146,18 @@ def save_configuration(
     try:
         config_manager = get_config_manager()
         
-        # Validate required fields
-        if not all([keycloak_url, gcm_url, gcm_hostname, username, password, client_id, client_secret, watsonx_url, project_id, api_key, model]):
-            return "❌ Error: All fields are required"
+        # Validate required fields based on auth mode
+        if auth_mode == "api_key":
+            if not all([gcm_url, gcm_hostname, watsonx_url, project_id, watsonx_api_key, model]) or not gcm_api_key:
+                return "❌ Error: GCM URL, Hostname, WatsonX settings, and GCM API Key are required for api_key mode"
+        else:
+            if not all([keycloak_url, gcm_url, gcm_hostname, username, client_id, watsonx_url, project_id, watsonx_api_key, model]) or not password or not client_secret:
+                return "❌ Error: All fields are required"
         
         # Create configuration objects (will validate)
+        # For api_key mode, Keycloak fields are optional — use placeholder values if blank
         keycloak_config = KeycloakConfig(
-            url=keycloak_url,
+            url=keycloak_url if keycloak_url else "https://placeholder.local",
             port=keycloak_port,
             realm=keycloak_realm,
             verify_ssl=keycloak_verify_ssl,
@@ -148,11 +167,14 @@ def save_configuration(
             url=gcm_url,
             hostname=gcm_hostname,
             verify_ssl=gcm_verify_ssl,
+            filtered_tags=filtered_tags,
         )
         
+        # For api_key mode, username/client_id are not needed — use placeholder values
         auth_config = AuthConfig(
-            username=username,
-            client_id=client_id,
+            username=username if username else "api_key_user",
+            client_id=client_id if client_id else "api_key_client",
+            auth_mode=auth_mode,
         )
         
         watsonx_config = WatsonXConfig(
@@ -176,8 +198,8 @@ def save_configuration(
         # Save configurations
         config_manager.update_keycloak_config(keycloak_config)
         config_manager.update_gcm_config(gcm_config)
-        config_manager.update_auth_config(auth_config, password, client_secret)
-        config_manager.update_watsonx_config(watsonx_config, api_key)
+        config_manager.update_auth_config(auth_config, password, client_secret, api_key=gcm_api_key)
+        config_manager.update_watsonx_config(watsonx_config, watsonx_api_key)
         config_manager.update_agent_config(agent_config)
         
         logger.info("Configuration saved successfully")
@@ -199,28 +221,33 @@ async def test_connection(
     keycloak_port: int,
     keycloak_realm: str,
     keycloak_verify_ssl: bool,
+    auth_mode: str,
     username: str,
     password: str,
     client_id: str,
     client_secret: str,
+    gcm_api_key: str,
 ) -> str:
     """
-    Test connection to Keycloak server with provided credentials.
+    Test connection: validates Keycloak credentials for oauth2 mode,
+    or confirms the API key is present for api_key mode.
     
-    Args:
-        Keycloak server and authentication parameters
-        
     Returns:
         Status message
     """
     try:
-        # Validate required fields
+        if auth_mode == "api_key":
+            if not gcm_api_key or not gcm_api_key.strip():
+                return "❌ Error: GCM API Key is required"
+            logger.info("API key mode — key is present, no network test required")
+            return "✅ API key is set. No Keycloak connection needed for api_key mode."
+        
+        # oauth2 mode — test Keycloak
         if not all([keycloak_url, username, password, client_id, client_secret]):
-            return "❌ Error: All connection fields are required"
+            return "❌ Error: All Keycloak connection fields are required"
         
         logger.info("Testing connection to Keycloak server")
         
-        # Create auth instance and test connection
         auth = KeycloakAuthenticator(
             keycloak_url=keycloak_url,
             realm=keycloak_realm,
@@ -231,7 +258,6 @@ async def test_connection(
             verify_ssl=keycloak_verify_ssl,
         )
         
-        # Attempt to get token
         token = await auth.get_token()
         
         if token:
@@ -320,30 +346,59 @@ def create_config_ui() -> gr.Blocks:
                 value=False,
                 info="Verify SSL certificates for GCM (disabled by default for self-signed certs)"
             )
+            filtered_tags = gr.Textbox(
+                label="Filtered Tags (X-MCP-Filtered-Tags)",
+                placeholder="Transformation,Ansible",
+                value="",
+                info="Optional: comma-separated MCP tag filter. Leave empty to expose all tools."
+            )
         
         with gr.Tab("🔐 Authentication"):
             gr.Markdown("### GCM Authentication Credentials")
-            username = gr.Textbox(
-                label="Username",
-                placeholder="admin",
-                info="GCM username"
+            auth_mode = gr.Radio(
+                choices=["oauth2", "api_key"],
+                value="oauth2",
+                label="Authentication Mode",
+                info="'oauth2' uses Keycloak; 'api_key' uses a raw GCM API key (skips Keycloak)"
             )
-            password = gr.Textbox(
-                label="Password",
-                type="password",
-                placeholder="••••••••",
-                info="GCM user password (stored securely)"
-            )
-            client_id = gr.Textbox(
-                label="Client ID",
-                placeholder="gcm-client",
-                info="OAuth2 client ID"
-            )
-            client_secret = gr.Textbox(
-                label="Client Secret",
-                type="password",
-                placeholder="••••••••",
-                info="OAuth2 client secret (stored securely)"
+            # oauth2 fields group
+            with gr.Group(visible=True) as oauth2_group:
+                username = gr.Textbox(
+                    label="Username",
+                    placeholder="admin",
+                    info="GCM username"
+                )
+                password = gr.Textbox(
+                    label="Password",
+                    type="password",
+                    placeholder="••••••••",
+                    info="GCM user password (stored securely)"
+                )
+                client_id = gr.Textbox(
+                    label="Client ID",
+                    placeholder="gcm-client",
+                    info="OAuth2 client ID"
+                )
+                client_secret = gr.Textbox(
+                    label="Client Secret",
+                    type="password",
+                    placeholder="••••••••",
+                    info="OAuth2 client secret (stored securely)"
+                )
+            # api_key field — shown only when auth_mode == "api_key"
+            with gr.Group(visible=False) as api_key_group:
+                gcm_api_key_field = gr.Textbox(
+                    label="GCM API Key",
+                    type="password",
+                    placeholder="••••••••",
+                    info="GCM API key used directly as Bearer token (stored securely)"
+                )
+            
+            # Toggle visibility when auth mode changes
+            auth_mode.change(
+                fn=lambda m: (gr.update(visible=m == "oauth2"), gr.update(visible=m == "api_key")),
+                inputs=[auth_mode],
+                outputs=[oauth2_group, api_key_group],
             )
         
         with gr.Tab("🤖 WatsonX"):
@@ -464,8 +519,8 @@ def create_config_ui() -> gr.Blocks:
             fn=save_configuration,
             inputs=[
                 keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
-                gcm_url, gcm_hostname, gcm_verify_ssl,
-                username, password, client_id, client_secret,
+                gcm_url, gcm_hostname, gcm_verify_ssl, filtered_tags,
+                auth_mode, username, password, client_id, client_secret, gcm_api_key_field,
                 watsonx_url, project_id, api_key, model, watsonx_verify_ssl,
                 temperature, max_tokens, top_p, top_k, decoding_method,
                 discovery_mode, max_iterations, timeout
@@ -477,7 +532,7 @@ def create_config_ui() -> gr.Blocks:
             fn=test_connection,
             inputs=[
                 keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
-                username, password, client_id, client_secret
+                auth_mode, username, password, client_id, client_secret, gcm_api_key_field
             ],
             outputs=status
         )
@@ -486,8 +541,8 @@ def create_config_ui() -> gr.Blocks:
             fn=load_configuration,
             outputs=[
                 keycloak_url, keycloak_port, keycloak_realm, keycloak_verify_ssl,
-                gcm_url, gcm_hostname, gcm_verify_ssl,
-                username, password, client_id, client_secret,
+                gcm_url, gcm_hostname, gcm_verify_ssl, filtered_tags,
+                auth_mode, username, password, client_id, client_secret, gcm_api_key_field,
                 watsonx_url, project_id, api_key, model, watsonx_verify_ssl,
                 temperature, max_tokens, top_p, top_k, decoding_method,
                 discovery_mode, max_iterations, timeout,

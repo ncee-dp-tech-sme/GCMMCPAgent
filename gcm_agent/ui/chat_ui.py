@@ -1,6 +1,7 @@
 """Chat interface module for interacting with the GCM LangChain agent through a local UI."""
 
 # Made with Bob
+# 2026-07-17 01:15 UTC - Fixed api_key mode: _validate_base_config skips password/client_secret; passes gcm_api_key to AgentSetupConfig
 # 2026-06-05 22:08 UTC - Fixed Gradio message format to use dict format with 'role' and 'content' keys (Gradio 6.0+)
 # 2026-06-05 22:15 UTC - Initial implementation of chat UI with streaming support
 # 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
@@ -87,18 +88,25 @@ def _validate_base_config(config_manager) -> Tuple[Optional[str], Optional[Dict[
         return "Configuration incomplete. Please configure the agent first.", None
     
     try:
+        auth_config = config_manager.get_auth_config()
         configs = {
             'keycloak': config_manager.get_keycloak_config(),
             'gcm': config_manager.get_gcm_config(),
-            'auth': config_manager.get_auth_config(),
+            'auth': auth_config,
             'agent': config_manager.get_agent_config(),
             'llm': config_manager.get_llm_config(),
-            'password': config_manager.get_password(),
-            'client_secret': config_manager.get_client_secret(),
+            'password': config_manager.get_password() or "",
+            'client_secret': config_manager.get_client_secret() or "",
+            'gcm_api_key': config_manager.get_gcm_api_key() or "",
         }
         
-        if not all([configs['password'], configs['client_secret']]):
-            return "Missing GCM credentials. Please reconfigure the agent.", None
+        # Only require password/client_secret for oauth2 mode
+        if auth_config.auth_mode != "api_key":
+            if not configs['password'] or not configs['client_secret']:
+                return "Missing GCM credentials. Please reconfigure the agent.", None
+        else:
+            if not configs['gcm_api_key']:
+                return "Missing GCM API key. Please reconfigure the agent.", None
         
         return None, configs
     except Exception as e:
@@ -210,6 +218,7 @@ async def initialize_agent() -> str:
             agent_config=configs['agent'],
             password=configs['password'],
             client_secret=configs['client_secret'],
+            gcm_api_key=configs.get('gcm_api_key', ''),
         )
         
         # Create shared debug UI before agent creation so observability logging

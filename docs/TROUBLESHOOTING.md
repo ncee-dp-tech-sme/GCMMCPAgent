@@ -961,7 +961,7 @@ Via Configuration File:
 ```python
 # Edit ~/.gcm_agent/.credentials.enc (after decryption)
 # Or modify gcm_agent/config/config_manager.py defaults
-max_iterations = 30  # Increase from 20 to 30 or higher
+max_iterations = 30  # Default. Each unit = ~3 real tool call cycles (LangGraph recursion_limit = max_iterations * 3)
 ```
 
 **2. Verify Discovery Mode is Disabled**
@@ -998,13 +998,13 @@ If successful, the configuration is working correctly.
 
 #### When to Increase Max Iterations
 
-Consider increasing max_iterations beyond 20 when:
+Consider increasing max_iterations beyond 30 when:
 - Working with very large GCM deployments (hundreds of keys/assets)
 - Performing complex multi-step workflows
 - Aggregating data from multiple sources
 - Building comprehensive reports
 
-**Note:** Higher iteration counts increase processing time and token usage. Start with 20 and increase only if needed.
+**Note:** `max_iterations` is multiplied by 3 internally to set LangGraph's `recursion_limit` (e.g., 30 → recursion_limit=90). Higher values increase processing time and token usage. Start with 30 and increase only if needed.
 
 ---
 

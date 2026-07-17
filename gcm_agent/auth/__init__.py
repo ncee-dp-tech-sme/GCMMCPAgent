@@ -1,6 +1,7 @@
 """Authentication package for GCM Keycloak token retrieval and GCM authorization flows."""
 
 # Made with Bob
+# 2026-07-17 00:36 UTC - Added API key auth branch to get_client_factory(); thread filtered_tags into both paths; export APIKeyAuthenticator
 # 2026-06-09 19:13 UTC - Refactored authenticate_gcm and get_client_factory: extracted helpers, moved imports to module level, consolidated logging
 # 2026-06-06 02:59 UTC - Updated get_client_factory to pass gcm_hostname to _client_factory for x-gcm-hostname header injection
 # 2026-06-06 00:27 UTC - Updated to pass token expiration info and Keycloak authenticator to GCMAuthenticator for refresh mechanism
@@ -14,6 +15,7 @@ import httpx
 from gcm_agent.config.config_manager import KeycloakConfig, GCMServerConfig, AuthConfig
 from gcm_agent.auth.keycloak_auth import KeycloakAuthenticator, KeycloakAuthError
 from gcm_agent.auth.gcm_auth import GCMAuthenticator, GCMAuthError
+from gcm_agent.auth.api_key_auth import APIKeyAuthenticator
 from gcm_agent.utils.logger import get_auth_logger
 
 
@@ -180,12 +182,17 @@ async def get_client_factory(
     password: str,
     client_secret: str,
     timeout: Optional[float] = 300.0,
+    gcm_api_key: str = "",
 ):
     """
     Get authenticated client factory for MCP integration.
     
     This function completes the two-step auth flow and returns a factory
     function that creates httpx.AsyncClient instances with proper authentication.
+    
+    Supports two auth modes:
+    - oauth2 (default): Keycloak → GCM authorize → factory
+    - api_key: raw API key used directly as Bearer token, Keycloak skipped
     
     The factory is critical for langchain-mcp-adapters integration, as it
     handles the 'verify' parameter conflict and injects Bearer tokens.
@@ -194,27 +201,52 @@ async def get_client_factory(
         keycloak_config: Keycloak server configuration
         gcm_config: GCM server configuration
         auth_config: Authentication configuration
-        password: GCM user password
-        client_secret: OAuth2 client secret
+        password: GCM user password (unused in api_key mode)
+        client_secret: OAuth2 client secret (unused in api_key mode)
         timeout: Request timeout in seconds (default: 300)
+        gcm_api_key: GCM API key (required when auth_config.auth_mode == 'api_key')
     
     Returns:
-        Factory function that creates authenticated AsyncClient instances
+        Tuple of (factory, gcm_auth) — factory creates authenticated AsyncClient instances
     
     Raises:
-        KeycloakAuthError: If Keycloak authentication fails
-        GCMAuthError: If GCM authorization fails
+        KeycloakAuthError: If Keycloak authentication fails (oauth2 only)
+        GCMAuthError: If GCM authorization fails (oauth2 only)
         AuthenticationError: If authentication flow fails
     
     Example:
-        >>> factory = await get_client_factory(
+        >>> factory, gcm_auth = await get_client_factory(
         ...     keycloak_config, gcm_config, auth_config, password, client_secret
         ... )
         >>> # Pass factory to MCP client
         >>> mcp_client = MCPClient(client_factory=factory)
     """
     logger = get_auth_logger()
-    logger.info("Getting authenticated client factory for MCP integration")
+
+    # --- API key path: skip Keycloak and GCM authorize entirely ---
+    if auth_config.auth_mode == "api_key":
+        logger.info("API key auth mode: skipping Keycloak and GCM authorize flows")
+        gcm_auth = GCMAuthenticator(
+            gcm_url=gcm_config.url,
+            hostname=gcm_config.hostname,
+            verify_ssl=gcm_config.verify_ssl,
+        )
+        # Store API key as the current token; set expiry to far future (keys don't expire)
+        from datetime import datetime, timezone, timedelta
+        gcm_auth._access_token = gcm_api_key
+        gcm_auth._token_expires_at = datetime.now(timezone.utc) + timedelta(days=3650)
+        factory = gcm_auth._client_factory(
+            gcm_api_key,
+            timeout,
+            gcm_config.hostname,
+            token_type="api_key",
+            filtered_tags=gcm_config.filtered_tags,
+        )
+        logger.info("API key auth: factory created successfully")
+        return factory, gcm_auth
+
+    # --- OAuth2 path (default) ---
+    logger.info("Getting authenticated client factory for MCP integration (oauth2)")
     
     # Step 1: Get Keycloak OAuth2 token
     logger.info("Step 1: Authenticating with Keycloak")
@@ -237,8 +269,13 @@ async def get_client_factory(
     # Store token info for expiration tracking and refresh
     _store_token_info(gcm_auth, keycloak, access_token, logger)
     
-    # Step 3: Create client factory with gcm_hostname for x-gcm-hostname header
-    factory = gcm_auth._client_factory(access_token, timeout, gcm_config.hostname)
+    # Step 3: Create client factory with gcm_hostname and optional filtered_tags
+    factory = gcm_auth._client_factory(
+        access_token,
+        timeout,
+        gcm_config.hostname,
+        filtered_tags=gcm_config.filtered_tags,
+    )
     logger.info(f"Client factory created with verify_ssl={gcm_config.verify_ssl}")
     
     # Return both factory and authenticator for token refresh capability
@@ -250,6 +287,7 @@ __all__ = [
     # Authenticators
     "KeycloakAuthenticator",
     "GCMAuthenticator",
+    "APIKeyAuthenticator",
     # Exceptions
     "AuthenticationError",
     "KeycloakAuthError",

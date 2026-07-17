@@ -1,6 +1,7 @@
 """Configuration manager module for secure retrieval, validation, and caching of GCM agent settings."""
 
 # Made with Bob
+# 2026-07-17 00:36 UTC - Added auth_mode/api_key support to AuthConfig, filtered_tags to GCMServerConfig, updated AgentSetupConfig and is_configured()
 # 2026-06-09 19:50 UTC - Added AgentSetupConfig dataclass to consolidate agent creation parameters
 # 2026-06-05 19:53 UTC - Initial implementation of configuration manager with Pydantic models
 # 2026-06-05 21:02 UTC - Separated Keycloak configuration and added independent SSL verification
@@ -62,6 +63,10 @@ class GCMServerConfig(BaseModel):
     url: str = Field(..., description="GCM server URL (e.g., https://gcm.example.com)")
     hostname: str = Field(..., description="GCM server hostname")
     verify_ssl: bool = Field(default=False, description="Verify SSL certificates for GCM")
+    filtered_tags: str = Field(
+        default="",
+        description="Comma-separated MCP tag filter (e.g. 'Transformation,Ansible'). Empty = no filter."
+    )
 
     @validator("url")
     def validate_url(cls, v):
@@ -87,6 +92,10 @@ class AuthConfig(BaseModel):
     
     username: str = Field(..., description="GCM username")
     client_id: str = Field(..., description="OAuth2 client ID")
+    auth_mode: str = Field(
+        default="oauth2",
+        description="Authentication mode: 'oauth2' (Keycloak) or 'api_key'"
+    )
 
     @validator("username", "client_id")
     def validate_not_empty(cls, v):
@@ -94,6 +103,13 @@ class AuthConfig(BaseModel):
         if not v or not v.strip():
             raise ValueError("Field cannot be empty")
         return v.strip()
+
+    @validator("auth_mode")
+    def validate_auth_mode(cls, v):
+        """Validate auth_mode is a supported value."""
+        if v not in ["oauth2", "api_key"]:
+            raise ValueError("auth_mode must be 'oauth2' or 'api_key'")
+        return v.lower()
 
     class Config:
         """Pydantic model configuration."""
@@ -326,23 +342,30 @@ class AgentSetupConfig:
         auth_config: Authentication configuration
         llm_config: LLM provider configuration
         agent_config: Agent behavior configuration
-        password: GCM user password
-        client_secret: OAuth2 client secret
+        password: GCM user password (empty when auth_mode=api_key)
+        client_secret: OAuth2 client secret (empty when auth_mode=api_key)
+        gcm_api_key: GCM API key (populated when auth_mode=api_key)
     """
     keycloak_config: KeycloakConfig
     gcm_config: GCMServerConfig
     auth_config: AuthConfig
     llm_config: LLMProviderConfig
     agent_config: AgentConfig
-    password: str
-    client_secret: str
+    password: str = ""
+    client_secret: str = ""
+    gcm_api_key: str = ""
     
     def __post_init__(self):
         """Validate configuration after initialization."""
-        if not self.password or not self.password.strip():
-            raise ValueError("Password cannot be empty")
-        if not self.client_secret or not self.client_secret.strip():
-            raise ValueError("Client secret cannot be empty")
+        auth_mode = self.auth_config.auth_mode
+        if auth_mode == "oauth2":
+            if not self.password or not self.password.strip():
+                raise ValueError("password required for oauth2 mode")
+            if not self.client_secret or not self.client_secret.strip():
+                raise ValueError("client_secret required for oauth2 mode")
+        elif auth_mode == "api_key":
+            if not self.gcm_api_key or not self.gcm_api_key.strip():
+                raise ValueError("gcm_api_key required for api_key mode")
 
 
 
@@ -646,14 +669,15 @@ class ConfigManager:
         self._save_config_to_storage(self._config_cache)
         self.logger.info("Updated Keycloak configuration")
 
-    def update_auth_config(self, config: AuthConfig, password: str, client_secret: str) -> None:
+    def update_auth_config(self, config: AuthConfig, password: str, client_secret: str, api_key: str = "") -> None:
         """
         Update authentication configuration including sensitive credentials.
 
         Args:
             config: AuthConfig instance
-            password: GCM user password
-            client_secret: OAuth2 client secret
+            password: GCM user password (empty for api_key mode)
+            client_secret: OAuth2 client secret (empty for api_key mode)
+            api_key: GCM API key (populated for api_key mode)
 
         Raises:
             StorageError: If save operation fails
@@ -669,8 +693,12 @@ class ConfigManager:
         self._save_config_to_storage(self._config_cache)
 
         # Store sensitive credentials separately
-        self.storage.store_credential("gcm_password", password)
-        self.storage.store_credential("gcm_client_secret", client_secret)
+        if password:
+            self.storage.store_credential("gcm_password", password)
+        if client_secret:
+            self.storage.store_credential("gcm_client_secret", client_secret)
+        if api_key:
+            self.storage.store_credential("gcm_api_key", api_key)
         self.logger.info("Updated authentication configuration")
 
     def update_watsonx_config(self, config: WatsonXConfig, api_key: str) -> None:
@@ -814,8 +842,18 @@ class ConfigManager:
         except StorageError as e:
             self.logger.error(f"Failed to retrieve OpenAI API key: {e}")
             return None
+
+    def get_gcm_api_key(self) -> Optional[str]:
+        """
+        Get GCM API key from secure storage (used in api_key auth mode).
+
+        Returns:
+            API key if found, None otherwise
+        """
+        try:
+            return self.storage.get_credential("gcm_api_key")
         except StorageError as e:
-            self.logger.error(f"Failed to retrieve WatsonX API key: {e}")
+            self.logger.error(f"Failed to retrieve GCM API key: {e}")
             return None
 
     def is_configured(self) -> bool:
@@ -829,18 +867,25 @@ class ConfigManager:
             # Check non-sensitive config
             self.get_keycloak_config()
             self.get_gcm_config()
-            self.get_auth_config()
+            auth_config = self.get_auth_config()
 
-            # Check sensitive credentials
-            if not self.get_password():
-                self.logger.debug("Missing GCM password")
-                return False
-            if not self.get_client_secret():
-                self.logger.debug("Missing client secret")
-                return False
+            # Check auth-mode-specific credentials
+            if auth_config.auth_mode == "api_key":
+                if not self.get_gcm_api_key():
+                    self.logger.debug("Missing GCM API key")
+                    return False
+            else:
+                # oauth2 — existing checks
+                if not self.get_password():
+                    self.logger.debug("Missing GCM password")
+                    return False
+                if not self.get_client_secret():
+                    self.logger.debug("Missing client secret")
+                    return False
 
             # Check LLM provider configuration
             llm_config = self.get_llm_config()
+            # (auth_config already retrieved above)
             if llm_config.provider == "watsonx":
                 self.get_watsonx_config()
                 if not self.get_watsonx_api_key():

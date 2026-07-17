@@ -1,6 +1,7 @@
 """Agent package for LangGraph-based orchestration of GCM MCP tools and LLM interactions."""
 
 # Made with Bob
+# 2026-07-17 00:36 UTC - Pass gcm_api_key from AgentSetupConfig to create_gcm_mcp_client()
 # 2026-06-09 19:50 UTC - Major refactoring: consolidated parameters into AgentSetupConfig, inlined context manager, enhanced logging, fixed exception handling
 # 2026-06-09 19:42 UTC - Refactored create_gcm_agent: extracted cleanup, consolidated exceptions, improved logging, added context manager
 # 2026-06-09 19:35 UTC - Comprehensive refactoring: added type hints, validation, better error handling, cleanup on failure
@@ -130,6 +131,7 @@ async def create_gcm_agent(config: AgentSetupConfig, debug_ui: Optional['DebugUI
             config.agent_config,
             config.password,
             config.client_secret,
+            gcm_api_key=config.gcm_api_key,
         )
         
         # Create agent instance with unified LLM config
@@ -158,7 +160,6 @@ async def create_gcm_agent(config: AgentSetupConfig, debug_ui: Optional['DebugUI
         # Cleanup and convert unexpected exceptions
         await _cleanup_mcp_client(mcp_client, logger)
         logger.error(f"Unexpected error creating GCM Agent: {e}")
-        raise AgentInitializationError(f"Unexpected error: {e}") from e
         raise AgentInitializationError(f"Unexpected error: {e}") from e
 
 

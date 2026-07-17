@@ -20,7 +20,7 @@ The GCM Agent enables you to manage cryptographic assets, query key information,
 
 - 🗣️ **Natural Language Interface** - Ask questions and give commands in plain English
 - 🔒 **Secure Credential Storage** - All sensitive data encrypted with Fernet encryption and stored locally
-- 🔐 **Two-Step Authentication** - OAuth2 flow with Keycloak and GCM user management
+- 🔐 **Flexible Authentication** - OAuth2 flow with Keycloak **or** direct API key mode (`token_type: api_key`)
 - 🔍 **Dynamic Tool Discovery** - Automatically loads only the tools you need for optimal performance
 - 💻 **Local Execution** - Runs entirely on your machine without cloud dependencies
 - 📝 **Conversation History** - Maintains context across multiple interactions
@@ -108,8 +108,10 @@ The application will start on `http://localhost:7860`
 2. **Navigate to the ⚙️ Configuration tab**
 3. **Enter your settings**:
    - **Keycloak Server**: Authentication server URL, port, realm, and SSL verification
-   - **GCM Server**: GCM MCP server URL, hostname, and SSL verification
-   - **Authentication**: Username, password, client ID, and client secret (stored securely)
+   - **GCM Server**: GCM MCP server URL, hostname, SSL verification, and optional tag filter
+   - **Authentication**: Choose **Authentication Mode**:
+     - **oauth2** (default): Username, password, client ID, and client secret (stored securely)
+     - **api_key**: GCM API key only — Keycloak/password fields not required
    - **LLM Provider**: Choose between WatsonX or openai
      - **WatsonX**: API key, project ID, and model selection
      - **openai**: API key, model name, temperature, and max tokens
@@ -275,12 +277,26 @@ See [`docs/PHASE3_COMPLETION_SUMMARY.md`](docs/PHASE3_COMPLETION_SUMMARY.md) for
 - **Pydantic Validation**: Type-safe configuration with automatic validation
 - **Thread-Safe Singleton**: Consistent configuration access across components
 
-### Two-Step Authentication
+### Authentication Modes
 
+The agent supports two authentication modes, selectable per connection:
+
+**OAuth2 mode (default)** — two-step flow:
 1. **Keycloak OAuth2**: Obtain access token from Keycloak server
 2. **GCM Authorization**: Authorize with GCM user management endpoint
 3. **Token Injection**: Custom `_client_factory()` injects token into MCP client headers
 4. **Automatic Refresh**: Token management handled transparently
+
+**API Key mode** — single-step:
+1. Set **Authentication Mode** to `api_key` in the Configuration UI (or `AUTH_MODE=api_key` in `.env`)
+2. Enter your **GCM API Key** — stored securely in the same Fernet-encrypted store
+3. The key is placed directly in `Authorization: Bearer <api_key>` and the additional header `token_type: api_key` is sent to the MCP server
+4. Keycloak, password, and client secret fields are not required and can be left empty
+
+**Tag Filtering (both modes)**:
+- Set **Filtered Tags** in the GCM Server tab to restrict which tool groups the MCP server exposes
+- Sent as the `X-MCP-Filtered-Tags` header (e.g. `Transformation,Ansible`)
+- Leave empty to expose all tools (default)
 
 ### Dynamic Tool Discovery
 
@@ -336,8 +352,10 @@ pytest>=7.4.0              # Testing framework
 
 ### Access Requirements
 
-- **GCM Server**: URL, hostname, valid user credentials
-- **Keycloak**: OAuth2 client ID and secret, realm information
+- **GCM Server**: URL, hostname, and either:
+  - **OAuth2 mode**: valid GCM username, password, Keycloak client ID and secret
+  - **API key mode**: GCM API key only
+- **Keycloak** *(OAuth2 mode only)*: client ID and secret, realm information
 
 ## LLM Provider Configuration
 
@@ -448,6 +466,26 @@ GCM URL: https://gcm.apps.example.com:9443
 GCM Hostname: gcm.apps.example.com (or full URL - will be extracted automatically)
 ```
 
+### API Key Authentication
+
+When `auth_mode = api_key` is configured:
+
+- ✅ **Simplified**: No Keycloak server required — single credential to manage
+- ✅ **Secure**: API key stored with Fernet encryption alongside other credentials
+- ✅ **Headers sent**: `Authorization: Bearer <api_key>` and `token_type: api_key`
+- ✅ **No expiry**: API keys are treated as non-expiring — no token refresh cycles
+- ⚠️ **Key rotation**: Rotate API keys manually via the Configuration UI when required
+
+### MCP Tag Filtering
+
+The `X-MCP-Filtered-Tags` header controls which tool groups the MCP server exposes:
+
+- **Configure**: Enter comma-separated tag names in the **Filtered Tags** field of the GCM Server tab
+- **Example**: `Transformation,Ansible` exposes only tools tagged with those groups
+- **Empty (default)**: All tools are exposed — no filter applied
+- **Works in both modes**: Tag filtering is independent of the authentication mode used
+- **Environment variable**: `MCP_FILTERED_TAGS=Transformation,Ansible`
+
 ### RBAC Enforcement
 
 - ✅ **GCM RBAC**: Respects GCM role-based access control
@@ -541,7 +579,7 @@ The agent is designed for future integration with Watsonx Orchestrate:
 | Slow initialization | Enable discovery mode |
 | Agent not responding | Reinitialize agent, check logs |
 | Gradio message format error | Update to latest version (fixed in v1.0) |
-| "Need more steps" error | Increase max_iterations (default now 20) or disable discovery mode |
+| "Recursion limit" / "Need more steps" error | Fixed in latest version (unit mismatch between `max_iterations` and LangGraph's `recursion_limit` corrected). Default `max_iterations=30` now yields `recursion_limit=90`. Increase `max_iterations` in config if still needed. |
 | AttributeError: 'coroutine' object | Fixed in v2026-06-06 - update to latest version |
 | Discovery mode execute tool errors | Fixed in v2026-06-06 - LLM now calls tools directly for simple queries |
 | 405 Method Not Allowed errors | Server-side schema mismatch - check GCM MCP server tool mappings |
@@ -723,6 +761,7 @@ Built with:
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 0.9.7 | 2026-07-17 | Added API key authentication mode (`token_type: api_key`) and `X-MCP-Filtered-Tags` header support |
 | 0.9.6 | 2026-06-09 | Phase 4: Observability & Debugging - Structured logging, token tracking, performance monitoring |
 | 0.9.5 | 2026-06-08 | Phase 3: Tool Management & Analytics - Intelligent tool prioritization |
 | 0.9.4 | 2026-06-08 | Phase 2: Configuration & Resilience - Configurable LLM parameters, retry logic |
@@ -734,5 +773,5 @@ For detailed changelog, see [`docs/CHANGELOG.md`](docs/CHANGELOG.md).
 ---
 
 **Maintained By:** Erwin Friethoff - Senior Security Architect
-**Last Updated:** 2026-06-09
-**Version:** 0.9.6
+**Last Updated:** 2026-07-17
+**Version:** 0.9.7

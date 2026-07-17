@@ -258,7 +258,8 @@ class GCMAgent:
             Compiled StateGraph
         """
         self.logger.debug(
-            f"Creating LangGraph agent with max_iterations={self.agent_config.max_iterations}"
+            f"Creating LangGraph agent with max_iterations={self.agent_config.max_iterations} "
+            f"(recursion_limit={self.agent_config.max_iterations * 3})"
         )
         
         # Get system prompt based on discovery mode
@@ -383,9 +384,12 @@ class GCMAgent:
             
             # Invoke agent
             tool_selection_start = time.perf_counter()
+            # LangGraph recursion_limit counts node transitions, not tool calls.
+            # Each tool call = 2 transitions (agent->tools->agent) + overhead.
+            # Multiply max_iterations by 3 to give adequate headroom.
             result = await self.graph.ainvoke(
                 {"messages": list(self.history)},  # Convert deque to list for graph
-                config={"recursion_limit": self.agent_config.max_iterations},
+                config={"recursion_limit": self.agent_config.max_iterations * 3},
             )
             tool_selection_duration = (time.perf_counter() - tool_selection_start) * 1000
             
@@ -499,9 +503,12 @@ class GCMAgent:
             all_messages = []
             
             # Stream agent responses
+            # LangGraph recursion_limit counts node transitions, not tool calls.
+            # Each tool call = 2 transitions (agent->tools->agent) + overhead.
+            # Multiply max_iterations by 3 to give adequate headroom.
             async for chunk in self.graph.astream(
                 {"messages": list(self.history)},  # Convert deque to list for graph
-                config={"recursion_limit": self.agent_config.max_iterations},
+                config={"recursion_limit": self.agent_config.max_iterations * 3},
             ):
                 if "agent" in chunk:
                     messages = chunk["agent"]["messages"]

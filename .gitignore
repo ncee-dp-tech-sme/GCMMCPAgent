@@ -195,3 +195,9 @@ docs/QuickStartGuide-IBMDocumentation.md
 
 # GCM MCP Server reference files (for development comparison only)
 gcm_mcp_server_reference/
+
+# Bob AI assistant workspace files
+.bob/
+
+# Task outcome notes (local only)
+task-outcomes/

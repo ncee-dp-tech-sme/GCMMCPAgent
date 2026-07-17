@@ -1,6 +1,7 @@
 """MCP client and tool loader for GCM Agent."""
 
 # Made with Bob
+# 2026-07-17 00:36 UTC - Added gcm_api_key parameter to create_gcm_mcp_client() and forwarded to get_client_factory()
 # 2026-06-06 00:27 UTC - Updated to store GCMAuthenticator and handle token refresh before MCP operations
 # 2026-06-05 22:00 UTC - Initial implementation of MCP exceptions and helper functions
 # 2026-06-05 21:05 UTC - Updated to use separate KeycloakConfig and GCMServerConfig
@@ -44,6 +45,7 @@ async def create_gcm_mcp_client(
     agent_config,
     password: str,
     client_secret: str,
+    gcm_api_key: str = "",
 ) -> Tuple[GCMMCPClient, GCMToolLoader]:
     """
     Create and connect GCM MCP client with tool loader.
@@ -94,7 +96,9 @@ async def create_gcm_mcp_client(
         # get_client_factory now returns both factory and authenticator for token refresh
         logger.debug("Step 1-2: Authenticating and creating client factory")
         client_factory, gcm_authenticator = await get_client_factory(
-            keycloak_config, gcm_config, auth_config, password, client_secret, timeout=agent_config.timeout
+            keycloak_config, gcm_config, auth_config, password, client_secret,
+            timeout=agent_config.timeout,
+            gcm_api_key=gcm_api_key,
         )
         
         # Step 3: Create MCP client with authenticator for token refresh

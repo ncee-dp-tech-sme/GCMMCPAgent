@@ -324,7 +324,7 @@ Found 47 cryptographic keys across all key groups:
 
 *[Complete listing with details...]*
 
-> **Note:** The agent is optimized to handle broad queries like "all keys", "all assets", or "all key groups" efficiently. With the default configuration (max_iterations=20, discovery_mode=False), these queries complete successfully without hitting iteration limits.
+> **Note:** The agent is optimized to handle broad queries like "all keys", "all assets", or "all key groups" efficiently. With the default configuration (max_iterations=30, discovery_mode=False), these queries complete successfully without hitting iteration limits. Internally, `max_iterations` is multiplied by 3 to produce the correct LangGraph `recursion_limit` (90), which gives headroom for ~30 real tool call cycles.
 
 #### Getting Key Details
 
