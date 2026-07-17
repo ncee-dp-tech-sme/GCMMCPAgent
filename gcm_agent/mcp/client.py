@@ -1,6 +1,7 @@
 """MCP client wrapper for GCM server integration."""
 
 # Made with Bob
+# 2026-07-17 - Fixed ExceptionGroup sub-exception extraction in get_tools() to surface real connection errors
 # 2026-06-08 21:11 UTC - Phase 3: Integrated tool usage analytics for intelligent tool prioritization
 # 2026-06-08 20:47 UTC - Phase 2: Added retry logic with exponential backoff for tool execution resilience
 # 2026-06-08 16:12 UTC - Added intelligent parameter defaults for pagination (page_number, page_size) to fix missing required parameters
@@ -333,30 +334,21 @@ class GCMMCPClient:
             self.logger.error("\nFull Traceback:")
             self.logger.error(traceback.format_exc())
             
-            # For TaskGroup exceptions, try to extract sub-exceptions
-            if "TaskGroup" in exc_type or "TaskGroup" in str(e):
-                self.logger.error("\nTaskGroup Exception Detected - Attempting to extract sub-exceptions:")
-                
-                # Try to access __cause__ and __context__ for nested exceptions
-                if hasattr(e, '__cause__') and e.__cause__:
-                    self.logger.error(f"\n__cause__: {type(e.__cause__).__name__}: {e.__cause__}")
-                    self.logger.error("Cause Traceback:")
-                    self.logger.error(''.join(traceback.format_exception(type(e.__cause__), e.__cause__, e.__cause__.__traceback__)))
-                
-                if hasattr(e, '__context__') and e.__context__:
-                    self.logger.error(f"\n__context__: {type(e.__context__).__name__}: {e.__context__}")
-                    self.logger.error("Context Traceback:")
-                    self.logger.error(''.join(traceback.format_exception(type(e.__context__), e.__context__, e.__context__.__traceback__)))
-                
-                # Try to access exceptions attribute if it's an ExceptionGroup
-                if hasattr(e, 'exceptions'):
-                    self.logger.error(f"\nFound {len(e.exceptions)} sub-exception(s):")
-                    for idx, sub_exc in enumerate(e.exceptions, 1):
-                        self.logger.error(f"\nSub-exception {idx}:")
-                        self.logger.error(f"  Type: {type(sub_exc).__name__}")
-                        self.logger.error(f"  Message: {str(sub_exc)}")
-                        self.logger.error("  Traceback:")
-                        self.logger.error(''.join(traceback.format_exception(type(sub_exc), sub_exc, sub_exc.__traceback__)))
+            # Extract sub-exceptions from ExceptionGroup (Python 3.11+) or TaskGroup wrappers.
+            # anyio wraps connection errors in a BaseExceptionGroup, not a plain "TaskGroup" type.
+            root_cause_msg = str(e)
+            if hasattr(e, 'exceptions') and e.exceptions:
+                self.logger.error(f"\nExceptionGroup detected - {len(e.exceptions)} sub-exception(s):")
+                sub_msgs = []
+                for idx, sub_exc in enumerate(e.exceptions, 1):
+                    self.logger.error(f"\nSub-exception {idx}:")
+                    self.logger.error(f"  Type: {type(sub_exc).__name__}")
+                    self.logger.error(f"  Message: {str(sub_exc)}")
+                    self.logger.error("  Traceback:")
+                    self.logger.error(''.join(traceback.format_exception(type(sub_exc), sub_exc, sub_exc.__traceback__)))
+                    sub_msgs.append(f"{type(sub_exc).__name__}: {sub_exc}")
+                # Use the real sub-exception messages as the error description
+                root_cause_msg = "; ".join(sub_msgs)
             
             # Log MCP client state
             self.logger.error("\nMCP Client State:")
@@ -376,7 +368,7 @@ class GCMMCPClient:
             self.logger.error("=" * 80)
             
             from gcm_agent.mcp import MCPToolError
-            raise MCPToolError(f"Failed to fetch tools: {e}") from e
+            raise MCPToolError(f"Failed to fetch tools: {root_cause_msg}") from e
     
     def _unwrap_params(self, arguments: Dict[str, Any]) -> Dict[str, Any]:
         """
